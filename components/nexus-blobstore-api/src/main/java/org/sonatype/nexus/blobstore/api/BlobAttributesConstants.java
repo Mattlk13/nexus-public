@@ -31,5 +31,9 @@ public final class BlobAttributesConstants
 
   public static final String DELETED_DATETIME_ATTRIBUTE = "deletedDateTime";
 
+  public static final String ASSET_ATTRIBUTE_HEADER_PREFIX = "attributes.asset.";
+
+  public static final String COMPONENT_ATTRIBUTE_HEADER_PREFIX = "attributes.component.";
+
   private BlobAttributesConstants() {}
 }

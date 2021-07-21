@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -62,6 +66,18 @@ Ext.define('NX.coreui.view.task.TaskSettingsForm', {
         helpText: NX.I18n.get('Task_TaskSettingsForm_Email_HelpText'),
         allowBlank: true
       },
+      {
+        xtype: 'combo',
+        name: 'notificationCondition',
+        fieldLabel: NX.I18n.get('Task_TaskSettingsForm_NotificationCondition_FieldLabel'),
+        helpText: NX.I18n.get('Task_TaskSettingsForm_NotificationCondition_HelpText'),
+        editable: false,
+        store: [
+          ['FAILURE', NX.I18n.get('Task_TaskSettingsForm_NotificationCondition_FailureItem')],
+          ['SUCCESS_FAILURE', NX.I18n.get('Task_TaskSettingsForm_NotificationCondition_SuccessFailureItem')]
+        ],
+        value: 'FAILURE'
+      },
       { xtype: 'nx-coreui-formfield-settingsfieldset' },
       { xtype: 'nx-coreui-task-schedulefieldset' }
     ];
@@ -91,6 +107,7 @@ Ext.define('NX.coreui.view.task.TaskSettingsForm', {
         enabled: values.enabled ? true : false,
         name: values.name,
         alertEmail: values.alertEmail,
+        notificationCondition: values.notificationCondition,
         schedule: values.schedule
       };
 
@@ -126,6 +143,11 @@ Ext.define('NX.coreui.view.task.TaskSettingsForm', {
 
     if (taskTypeModel) {
       formFields = taskTypeModel.get('formFields');
+      if (!taskTypeModel.get('concurrentRun')) {
+        var scheduleFieldSetCombo = this.down('combo[name="schedule"]');
+        scheduleFieldSetCombo.setStore([['manual', NX.I18n.get('Task_TaskScheduleFieldSet_Recurrence_ManualItem')],
+          ['once', NX.I18n.get('Task_TaskScheduleFieldSet_Recurrence_OnceItem')]]);
+      }
 
       Ext.each(formFields, function(field) {
         var properties = model.get('properties');

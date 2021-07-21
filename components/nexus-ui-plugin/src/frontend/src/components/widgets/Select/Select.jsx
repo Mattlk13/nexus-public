@@ -14,14 +14,27 @@ import classNames from 'classnames';
 import React from 'react';
 
 import './Select.scss';
+import PropTypes from "prop-types";
+import {getFirstValidationError, hasValidationErrors} from "@sonatype/react-shared-components/util/validationUtil";
 
 /**
- * @since 3.next
+ * @since 3.21
  */
-export default function Select({children, className, ...rest}) {
-  const classes = classNames('nxrm-select', className);
+export default function Select({value, children, className, name, id, isPristine, validatable, validationErrors, ...rest}) {
+  const isInvalid = hasValidationErrors(validationErrors);
+  const classes = classNames('nx-form-select', className, {
+    'invalid': isInvalid && !isPristine
+  });
 
-  return <select className={classes} {...rest}>
-    {children}
-  </select>;
+  return <div className="nxrm-select">
+    <select className={classes} id={id || name} name={name} value={value} {...rest}>
+      {children}
+    </select>
+    {!isPristine && validatable && isInvalid ?
+        <div className="nx-text-input__invalid-message">{getFirstValidationError(validationErrors)}</div> : null}
+  </div>;
 }
+
+Select.propTypes = {
+  validationErrors: PropTypes.oneOfType([PropTypes.string, PropTypes.array])
+};

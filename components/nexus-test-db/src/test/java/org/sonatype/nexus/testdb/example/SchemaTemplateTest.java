@@ -22,16 +22,19 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.datastore.api.SchemaTemplate;
 import org.sonatype.nexus.testdb.DataSessionRule;
+import org.sonatype.nexus.testdb.example.template.metal.MetalSpindleDAO;
 import org.sonatype.nexus.testdb.example.template.metal.MetalSprocketDAO;
+import org.sonatype.nexus.testdb.example.template.plastic.PlasticSpindleDAO;
 import org.sonatype.nexus.testdb.example.template.plastic.PlasticSprocketDAO;
 
 import org.hamcrest.Matcher;
 import org.junit.Rule;
 import org.junit.Test;
 
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.junit.Assert.assertThat;
 import static org.sonatype.nexus.common.text.Strings2.lower;
+import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
 /**
  * Test the {@link SchemaTemplate} annotation.
@@ -41,16 +44,16 @@ public class SchemaTemplateTest
 {
   @Rule
   public DataSessionRule sessionRule = new DataSessionRule()
+      .access(PlasticSpindleDAO.class)
       .access(PlasticSprocketDAO.class)
+      .access(MetalSpindleDAO.class)
       .access(MetalSprocketDAO.class);
 
   @Test
   public void testExpectedAccessTypesRegisteredFirst() throws SQLException {
-    try (DataSession<?> session = sessionRule.openSession("config")) {
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
       // will fail if @Expects and @SchemaTemplate are not respected
       session.access(MetalSprocketDAO.class);
-      session.access(PlasticSprocketDAO.class).extendSchema();
-      session.getTransaction().commit();
     }
 
     // check the extra column added by plastic_sprocket exists
@@ -60,7 +63,7 @@ public class SchemaTemplateTest
 
   private void assertColumns(final String tableName, final Matcher<Iterable<?>> matcher) throws SQLException {
     List<String> columnNames = new ArrayList<>();
-    try (Connection connection = sessionRule.openConnection("config");
+    try (Connection connection = sessionRule.openConnection(DEFAULT_DATASTORE_NAME);
         ResultSet rs = connection.getMetaData().getColumns(null, null, "%", null)) {
 
       while (rs.next()) {

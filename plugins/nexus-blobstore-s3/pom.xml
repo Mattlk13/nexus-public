@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.sonatype.nexus.plugins</groupId>
     <artifactId>nexus-plugins</artifactId>
-    <version>3.21.0-SNAPSHOT</version>
+    <version>3.33.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>nexus-blobstore-s3</artifactId>
@@ -55,11 +55,13 @@
     <dependency>
       <groupId>io.dropwizard.metrics</groupId>
       <artifactId>metrics-annotation</artifactId>
+      <scope>provided</scope>
     </dependency>
 
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-extdirect</artifactId>
+      <scope>provided</scope>
     </dependency>
 
     <dependency>
@@ -69,8 +71,8 @@
     </dependency>
 
     <dependency>
-      <groupId>org.sonatype.goodies</groupId>
-      <artifactId>goodies-testsupport</artifactId>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-testsupport</artifactId>
       <scope>test</scope>
     </dependency>
 
@@ -111,7 +113,7 @@
     </dependency>
 
     <dependency>
-      <groupId>software.amazon.ion</groupId>
+      <groupId>com.amazon.ion</groupId>
       <artifactId>ion-java</artifactId>
       <scope>provided</scope>
     </dependency>
@@ -119,6 +121,24 @@
     <dependency>
       <groupId>com.amazonaws</groupId>
       <artifactId>jmespath-java</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-java-sdk-cloudwatch</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-java-sdk-cloudwatchmetrics</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-java-sdk-dynamodb</artifactId>
       <scope>provided</scope>
     </dependency>
 
@@ -136,7 +156,7 @@
         <configuration>
           <instructions>
             <Embed-Dependency>
-              aws-java-sdk-s3,aws-java-sdk-sts,aws-java-sdk-core,aws-java-sdk-kms,ion-java,jmespath-java
+              aws-java-sdk-s3,aws-java-sdk-sts,aws-java-sdk-core,aws-java-sdk-kms,ion-java,jmespath-java,aws-java-sdk-cloudwatch,aws-java-sdk-cloudwatchmetrics,aws-java-sdk-dynamodb
             </Embed-Dependency>
             <Embed-Transitive>true</Embed-Transitive>
           </instructions>

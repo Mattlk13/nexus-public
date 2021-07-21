@@ -23,6 +23,7 @@ import org.sonatype.nexus.repository.maven.internal.group.RepositoryMetadataMerg
 import org.sonatype.nexus.repository.view.Content;
 
 import com.google.common.base.Function;
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
@@ -31,7 +32,6 @@ import org.apache.maven.artifact.repository.metadata.Plugin;
 import org.apache.maven.artifact.repository.metadata.Snapshot;
 import org.apache.maven.artifact.repository.metadata.SnapshotVersion;
 import org.apache.maven.artifact.repository.metadata.Versioning;
-import org.fest.util.Strings;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -150,6 +150,21 @@ public class RepositoryMetadataMergerTest
     mv.getSnapshotVersions().add(sources);
 
     return m;
+  }
+
+  @Test
+  public void metadataWithNullAndEmptyAreEqual() throws Exception {
+    final Metadata nullClassifier = v("org.foo", "some-project", "v-", "20150324121700", 1);
+    final Metadata emptyClassifier = v("org.foo", "some-project", "v-", "20150324121700", 1);
+    final Metadata spaceClassifier = v("org.foo", "some-project", "v-", "20150324121700", 1);
+
+    nullClassifier.getVersioning().getSnapshotVersions().get(0).setClassifier(null);
+    emptyClassifier.getVersioning().getSnapshotVersions().get(0).setClassifier("");
+    spaceClassifier.getVersioning().getSnapshotVersions().get(0).setClassifier("   ");
+
+    assertThat(merger.metadataEquals(nullClassifier, emptyClassifier), is(true));
+    assertThat(merger.metadataEquals(emptyClassifier, spaceClassifier), is(true));
+    assertThat(merger.metadataEquals(spaceClassifier, nullClassifier), is(true));
   }
 
   @Test

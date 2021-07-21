@@ -41,7 +41,7 @@ import static com.google.common.collect.Maps.newHashMap;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.AdditionalMatchers.not;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.mock;
@@ -65,7 +65,9 @@ public class MavenApiRepositoryAdapterTest
   public void testAdapt_groupRepository() throws Exception {
     // No maven specific props so simple smoke test
     Repository repository = createRepository(new GroupType());
-    repository.getConfiguration().attributes("group").set("memberNames", Arrays.asList("a", "b"));
+    Configuration configuration = repository.getConfiguration();
+    configuration.attributes("group").set("memberNames", Arrays.asList("a", "b"));
+    repository.update(configuration);
 
     SimpleApiGroupRepository groupRepository = (SimpleApiGroupRepository) underTest.adapt(repository);
     assertRepository(groupRepository, "group", true);

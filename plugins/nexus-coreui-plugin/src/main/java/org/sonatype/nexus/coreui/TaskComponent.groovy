@@ -27,6 +27,7 @@ import javax.validation.groups.Default
 
 import org.sonatype.nexus.extdirect.DirectComponent
 import org.sonatype.nexus.extdirect.DirectComponentSupport
+import org.sonatype.nexus.rapture.StateContributor
 import org.sonatype.nexus.scheduling.TaskConfiguration
 import org.sonatype.nexus.scheduling.TaskInfo
 import org.sonatype.nexus.scheduling.TaskScheduler
@@ -53,10 +54,11 @@ import com.softwarementors.extjs.djn.config.annotations.DirectMethod
 import groovy.transform.PackageScope
 import org.apache.shiro.authz.annotation.RequiresAuthentication
 import org.apache.shiro.authz.annotation.RequiresPermissions
-import org.hibernate.validator.constraints.NotEmpty
+import javax.validation.constraints.NotEmpty
 
-import static org.sonatype.nexus.repository.date.TimeZoneUtils.shiftWeekDay
+import static com.google.common.base.Preconditions.checkState
 import static org.sonatype.nexus.repository.date.TimeZoneUtils.shiftMonthDay
+import static org.sonatype.nexus.repository.date.TimeZoneUtils.shiftWeekDay
 import static org.sonatype.nexus.scheduling.TaskState.CANCELED
 import static org.sonatype.nexus.scheduling.TaskState.FAILED
 import static org.sonatype.nexus.scheduling.TaskState.INTERRUPTED
@@ -72,12 +74,22 @@ import static org.sonatype.nexus.scheduling.TaskState.OK
 @DirectAction(action = 'coreui_Task')
 class TaskComponent
     extends DirectComponentSupport
+  implements StateContributor
 {
   @Inject
   TaskScheduler scheduler
 
   @Inject
   Provider<Validator> validatorProvider
+
+  @Inject
+  @Named('${nexus.scripts.allowCreation:-false}')
+  boolean allowCreation
+
+  @Override
+  Map<String, Object> getState() {
+    return ['allowScriptCreation': allowCreation]
+  }
 
   /**
    * Retrieve a list of scheduled tasks.
@@ -104,6 +116,7 @@ class TaskComponent
           id: descriptor.id,
           name: descriptor.name,
           exposed: descriptor.exposed,
+          concurrentRun: descriptor.allowConcurrentRun(),
           formFields: descriptor.formFields?.collect { FormFieldXO.create(it) }
       )
       return result
@@ -125,10 +138,13 @@ class TaskComponent
     Schedule schedule = asSchedule(taskXO)
 
     TaskConfiguration config = scheduler.createTaskConfigurationInstance(taskXO.typeId)
+    checkState(config.isExposed(), 'This task is not allowed to be created')
+
     taskXO.properties.each { key, value ->
       config.setString(key, value)
     }
     config.setAlertEmail(taskXO.alertEmail)
+    config.setNotificationCondition(taskXO.notificationCondition)
     config.setName(taskXO.name)
     config.setEnabled(taskXO.enabled)
 
@@ -151,16 +167,22 @@ class TaskComponent
   TaskXO update(final @NotNull @Valid TaskXO taskXO) {
     TaskInfo task = scheduler.getTaskById(taskXO.id)
     validateState(task)
-    Schedule schedule = asSchedule(taskXO)
-    task.configuration.enabled = taskXO.enabled
-    task.configuration.name = taskXO.name
-    taskXO.properties.each { key, value ->
-      task.configuration.setString(key, value)
+    if (task.typeId == 'script') {
+      validateScriptUpdate(task, taskXO)
     }
-    task.configuration.setAlertEmail(taskXO.alertEmail)
-    task.configuration.setName(taskXO.name)
+    Schedule schedule = asSchedule(taskXO)
+    TaskConfiguration config = scheduler.createTaskConfigurationInstance(taskXO.typeId)
+    config.apply(task.configuration)
+    config.enabled = taskXO.enabled
+    config.name = taskXO.name
+    taskXO.properties.each { key, value ->
+      config.setString(key, value)
+    }
+    config.setAlertEmail(taskXO.alertEmail)
+    config.setNotificationCondition(taskXO.notificationCondition)
+    config.setName(taskXO.name)
 
-    task = scheduleTask { scheduler.scheduleTask(task.configuration, schedule) }
+    task = scheduleTask { scheduler.scheduleTask(config, schedule) }
 
     return asTaskXO(task)
   }
@@ -304,6 +326,7 @@ class TaskComponent
         runnable: state.waiting,
         stoppable: state.running,
         alertEmail: task.configuration.alertEmail,
+        notificationCondition: task.configuration.notificationCondition,
         properties: task.configuration.asMap()
     )
     def schedule = task.schedule
@@ -381,6 +404,16 @@ class TaskComponent
     if (externalTaskState.state.running) {
       throw new IllegalStateException(
           'Task can not be edited while it is being executed or it is in line to be executed')
+    }
+  }
+
+  @PackageScope
+  void validateScriptUpdate(final TaskInfo task, final TaskXO update) {
+    String originalSource = task.configuration.getString("source")
+    String updateSource = update.properties.get("source")
+
+    if (!allowCreation && !originalSource.equals(updateSource)) {
+      throw new IllegalStateException('Script source updates are not allowed')
     }
   }
 

@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -32,6 +36,7 @@ Ext.define('NX.coreui.controller.Blobstores', {
     'Blobstore'
   ],
   stores: [
+    'Repository',
     'Blobstore',
     'BlobstoreType',
     'BlobStoreQuotaType'
@@ -79,7 +84,9 @@ Ext.define('NX.coreui.controller.Blobstores', {
         variants: ['x16', 'x32']
       },
       visible: function() {
-        return NX.Permissions.check('nexus:blobstores:read') && !Ext.isEmpty(NX.State.getUser());
+        return NX.Permissions.check('nexus:blobstores:read') &&
+            !Ext.isEmpty(NX.State.getUser()) &&
+            !NX.State.getValue('nexus.react.blobstores', false);
       }
     };
 
@@ -115,7 +122,10 @@ Ext.define('NX.coreui.controller.Blobstores', {
         },
         //Note that this component is from the Task UI
         'combobox[name=property_fromGroup]': {
-          change: me.fromGroupChanged
+          change: me.removeGroupMemberTaskFromGroupChanged
+        },
+        'combobox[name=property_moveRepositoryName]': {
+          change: me.moveRepositoryTaskRepositoryNameChanged
         }
       }
     });
@@ -176,12 +186,14 @@ Ext.define('NX.coreui.controller.Blobstores', {
 
       if (model) {
         var inUse = model.get('inUse');
-        if (inUse) {
+        var taskUseCount = model.get('taskUseCount');
+        if (inUse || taskUseCount > 0) {
           var repositoryUseCount = model.get('repositoryUseCount');
           var blobStoreUseCount = model.get('blobStoreUseCount');
           me.showInfo(NX.I18n.format('Blobstore_BlobstoreFeature_Delete_Disabled_Message',
-                     Ext.util.Format.plural(repositoryUseCount, 'repository', 'repositories'),
-                     Ext.util.Format.plural(blobStoreUseCount, 'other blob store', 'other blob stores')));
+              Ext.util.Format.plural(repositoryUseCount, 'repository', 'repositories'),
+              Ext.util.Format.plural(blobStoreUseCount, 'other blob store', 'other blob stores'),
+              Ext.util.Format.plural(taskUseCount, 'task', 'tasks')));
           return false;
         }
 
@@ -271,13 +283,17 @@ Ext.define('NX.coreui.controller.Blobstores', {
   promoteToGroup: function(button) {
     var me = this,
         model = me.getList().getSelectionModel().getLastSelected();
-    NX.direct.coreui_Blobstore.promoteToGroup(model.get('name'), function (response) {
-      if (Ext.isObject(response) && response.success) {
-        NX.Messages.success(NX.I18n.format('Blobstore_BlobstoreFeature_Promote_Success', response.data.name));
-        me.getStore('Blobstore').load();
-        button.disable();
-      }
-    });
+    NX.Dialogs.askConfirmation(NX.I18n.get('Blobstore_BlobstoreFeature_Confirm_Title'),
+        NX.I18n.get('Blobstore_BlobstoreFeature_Confirm_Warning'),
+        function() {
+          NX.direct.coreui_Blobstore.promoteToGroup(model.get('name'), function(response) {
+            if (Ext.isObject(response) && response.success) {
+              NX.Messages.success(NX.I18n.format('Blobstore_BlobstoreFeature_Promote_Success', response.data.name));
+              me.getStore('Blobstore').load();
+              button.disable();
+            }
+          });
+        });
   },
 
   /**
@@ -343,7 +359,7 @@ Ext.define('NX.coreui.controller.Blobstores', {
     );
   },
 
-  fromGroupChanged: function(groupComboBox, newVal, old) {
+  removeGroupMemberTaskFromGroupChanged: function(groupComboBox, newVal, old) {
     var members = groupComboBox.up().query('[name=property_memberToRemove]')[0];
     var selectedGroup = groupComboBox.getStore().getById(newVal);
     var data = Ext.Array.map(selectedGroup.data.attributes.group.members, function(m) {return {name: m, id: m};});
@@ -352,5 +368,54 @@ Ext.define('NX.coreui.controller.Blobstores', {
     if(!old) {
       members.reset();
     }
+  },
+
+  moveRepositoryTaskRepositoryNameChanged: function(moveRepoComboBox, newVal, old) {
+    this.getStore('Repository').load({
+      scope: this,
+      callback: function() {
+        this.getStore('Blobstore').load({
+          scope: this,
+          callback: function() {
+            var me = this,
+                repoStore = me.getStore('Repository'),
+                selectedRepo = repoStore.findRecord('name', newVal);
+
+            if (selectedRepo) {
+              var blobstoreStore = me.getStore('Blobstore'),
+                  oldSelection,
+                  validSelection = false,
+                  blobstoresCombo = moveRepoComboBox.up().query('[name=property_moveTargetBlobstore]')[0],
+                  currentBlobStore = selectedRepo.data.attributes.storage.blobStoreName,
+                  validBlobstores = blobstoreStore.getRange().filter(function(item) {
+                    return item.data.name !== currentBlobStore;
+                  }).map(function(item) {
+                    return {name: item.data.name, id: item.data.name};
+                  });
+
+              // Check if selected value was valid, if not clean
+              oldSelection = blobstoresCombo.getValue()
+              for (var i = 0; i < validBlobstores.length; i++) {
+                if (validBlobstores[i].id === oldSelection) {
+                  oldSelection = blobstoresCombo.getValue()
+                  validSelection = true;
+                  break;
+                }
+              }
+
+              blobstoresCombo.getStore().setData(validBlobstores);
+              if (!old) {
+                blobstoresCombo.reset();
+              }
+              if (validSelection) {
+                blobstoresCombo.setValue(oldSelection);
+              } else {
+                blobstoresCombo.setValue(null);
+              }
+            }
+          }
+        });
+      }
+    });
   }
 });

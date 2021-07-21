@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -26,7 +30,8 @@ Ext.define('NX.onboarding.app.PluginStrings', {
   keys: {
     Onboarding_Text: 'Onboarding',
     Onboarding_Description: 'Configuration changes requiring attention',
-    Onboarding_Authenticate: 'Your <b>admin</b> user password is located in <br><b>{0}</b> on the server.'
+    Onboarding_Authenticate: 'Your <b>admin</b> user password is located in <br><b>{0}</b> on the server.',
+    Onboarding_LoadStepsError: 'Failed to retrieve setup steps from server'
   },
 
   bundles: {
@@ -44,11 +49,24 @@ Ext.define('NX.onboarding.app.PluginStrings', {
     },
     'NX.onboarding.view.ConfigureAnonymousAccessScreen': {
       Title: 'Configure Anonymous Access',
-      Description: '<p>Enabling anonymous access will allow unauthenticated downloads, browsing, and ' +
-      'searching of repository content by default. Permissions for unauthenticated users can be changed by ' +
-      'editing the roles assigned to the <b>anonymous</b> user.<br><br>' +
+      Description: '<p><b>Enable anonymous access</b> means that by default, users can search, browse and download  ' +
+      'components from repositories without credentials. Please <b>consider the security implications for your ' +
+      ' organization.</b>' +
+      '<br>' +
+      '<p><b>Disable anonymous access</b> should be chosen with care, as it <b>will require credentials for all</b> ' +
+      'users and/or build tools.'+
+      '<br><br>' +
       '<a href="https://links.sonatype.com/products/nexus/anonymous-access/docs" target="_blank" rel="noopener">More information <span class="x-fa fa-external-link"></a></p>',
-      Label: 'Enable anonymous access'
+      Enable_Label: 'Enable anonymous access',
+      Disable_Label: 'Disable anonymous access'
+    },
+    'NX.onboarding.view.ConfigureAnalyticsCollectionScreen': {
+      Title: 'Help Us Improve Nexus Repository',
+      Description: '<p>Please help us improve the Nexus Repository experience and shape future feature improvements by sharing ' +
+          'anonymous statistical metrics and performance information with Sonatype. The collected information will not contain ' +
+          'identifying or proprietary information (e.g. the names of hosts, servers, repositories, or users).</p>',
+      Enable_Label: 'Yes, I agree to share anonymous data.',
+      Disable_Label: 'No, not interested.'
     }
   }
 }, function(obj) {

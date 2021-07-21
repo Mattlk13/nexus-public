@@ -16,21 +16,17 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
 
+import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
-import org.sonatype.nexus.repository.search.SearchService;
-import org.sonatype.nexus.repository.storage.Asset;
-import org.sonatype.nexus.repository.storage.Component;
-import org.sonatype.nexus.repository.storage.StorageFacet;
-import org.sonatype.nexus.repository.storage.StorageTx;
+import org.sonatype.nexus.repository.search.index.SearchIndexService;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.authc.apikey.ApiKeyStore;
 import org.sonatype.nexus.security.authz.AuthorizationManager;
@@ -46,15 +42,15 @@ import org.sonatype.nexus.security.user.UserNotFoundException;
 import org.sonatype.nexus.security.user.UserStatus;
 import org.sonatype.nexus.selector.SelectorConfiguration;
 import org.sonatype.nexus.selector.SelectorManager;
+import org.sonatype.nexus.testsuite.helpers.ComponentAssetTestHelper;
 import org.sonatype.nexus.testsuite.testsupport.apt.AptClient;
 import org.sonatype.nexus.testsuite.testsupport.apt.AptClientFactory;
 import org.sonatype.nexus.testsuite.testsupport.cocoapods.CocoapodsClient;
 import org.sonatype.nexus.testsuite.testsupport.cocoapods.CocoapodsClientFactory;
-import org.sonatype.nexus.testsuite.testsupport.conda.CondaClient;
-import org.sonatype.nexus.testsuite.testsupport.conda.CondaClientFactory;
+import org.sonatype.nexus.testsuite.testsupport.fixtures.BlobStoreRule;
 import org.sonatype.nexus.testsuite.testsupport.fixtures.RepositoryRule;
 import org.sonatype.nexus.testsuite.testsupport.golang.GolangClient;
-import org.sonatype.nexus.testsuite.testsupport.npm.NpmClient;
+import org.sonatype.nexus.testsuite.testsupport.maven.Maven2Client;
 import org.sonatype.nexus.testsuite.testsupport.raw.RawClient;
 
 import com.google.common.collect.ImmutableMap;
@@ -66,12 +62,11 @@ import org.apache.http.util.EntityUtils;
 import org.hamcrest.MatcherAssert;
 import org.joda.time.DateTime;
 import org.junit.Rule;
+import org.junit.rules.RuleChain;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.collect.Lists.newArrayList;
 import static org.hamcrest.Matchers.is;
 import static org.sonatype.nexus.repository.http.HttpStatus.OK;
-import static org.sonatype.nexus.repository.storage.MetadataNodeEntityAdapter.P_NAME;
 import static org.sonatype.nexus.security.user.UserManager.DEFAULT_SOURCE;
 import static org.sonatype.nexus.testsuite.testsupport.FormatClientSupport.status;
 
@@ -87,15 +82,13 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
 
   protected AptClientFactory aptClientFactory = new AptClientFactory();
 
-  protected CondaClientFactory condaClientFactory = new CondaClientFactory();
-
   protected CocoapodsClientFactory cocoapodsClientFactory = new CocoapodsClientFactory();
 
   @Inject
-  protected RepositoryManager repositoryManager;
+  protected ComponentAssetTestHelper componentAssetTestHelper;
 
   @Inject
-  protected SearchService searchService;
+  protected RepositoryManager repositoryManager;
 
   @Inject
   protected ApiKeyStore keyStore;
@@ -109,8 +102,18 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
   @Inject
   protected SelectorManager selectorManager;
 
+  @Inject
+  protected BlobStoreManager blobStoreManager;
+
+  @Inject
+  protected SearchIndexService searchIndexService;
+
+  protected BlobStoreRule blobstoreRule = new BlobStoreRule(() -> blobStoreManager);
+
+  protected RR repos = createRepositoryRule();
+
   @Rule
-  public RR repos = createRepositoryRule();
+  public RuleChain ruleChain = RuleChain.outerRule(blobstoreRule).around(repos);
 
   protected abstract RR createRepositoryRule();
 
@@ -133,20 +136,16 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
     );
   }
 
-  protected NpmClient createNpmClient(final Repository repository, URL overrideNexusUrl) throws Exception {
-    return createNpmClient(resolveUrl(overrideNexusUrl, SLASH_REPO_SLASH + repository.getName() + "/"));
+  protected Maven2Client maven2Client(final Repository repository) throws Exception {
+    checkNotNull(repository);
+    return maven2Client(repositoryBaseUrl(repository));
   }
 
-  protected NpmClient createNpmClient(final Repository repository) throws Exception {
-    return createNpmClient(repository, nexusUrl);
-  }
-
-  protected NpmClient createNpmClient(final URL repositoryUrl) throws Exception {
-    return new NpmClient(
+  protected Maven2Client maven2Client(final URL repositoryUrl) throws Exception {
+    return new Maven2Client(
         clientBuilder(repositoryUrl).build(),
         clientContext(),
-        repositoryUrl.toURI(),
-        testData
+        repositoryUrl.toURI()
     );
   }
 
@@ -187,18 +186,6 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
         .createClient(resolveUrl(nexusUrl, SLASH_REPO_SLASH + repositoryName + "/"), username, password);
   }
 
-  protected CondaClient createCondaClient(final String repositoryName) {
-    Credentials creds = credentials();
-    return createCondaClient(repositoryName, creds.getUserPrincipal().getName(), creds.getPassword());
-  }
-
-  protected CondaClient createCondaClient(final String repositoryName, final String username, final String password)
-  {
-    checkNotNull(repositoryManager.get(repositoryName));
-    return condaClientFactory
-        .createClient(resolveUrl(nexusUrl, SLASH_REPO_SLASH + repositoryName + "/main/"), username, password);
-  }
-
   protected void enableRealm(final String realmName) {
     log.info("Realm configuration: {}", realmManager.getConfiguration());
 
@@ -214,17 +201,6 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
     else {
       log.info("{} realm already configured.", realmName);
     }
-  }
-
-  /**
-   * Waits for indexing to finish and makes sure any updates are available to search.
-   *
-   * General flow is component/asset events -> bulk index requests -> search indexing.
-   */
-  protected void waitForSearch() throws Exception {
-    waitFor(eventManager::isCalmPeriod);
-    searchService.flush(false); // no need for full fsync here
-    waitFor(searchService::isCalmPeriod);
   }
 
   protected void maybeCreateUser(final String username, final String password, final String role)
@@ -290,44 +266,7 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
   }
 
   protected DateTime getLastDownloadedTime(final Repository repository, final String assetName) {
-    try (StorageTx tx = repository.facet(StorageFacet.class).txSupplier().get()) {
-      tx.begin();
-
-      Iterable<Asset> assets = tx.browseAssets(tx.findBucket(repository));
-      for (Asset asset : assets) {
-        if (asset.name().equals(assetName)) {
-          return asset.lastDownloaded();
-        }
-      }
-
-      return null;
-    }
-  }
-
-  protected static Component findComponent(final Repository repo, final String name) {
-    try (StorageTx tx = getStorageTx(repo)) {
-      tx.begin();
-      return tx.findComponentWithProperty(P_NAME, name, tx.findBucket(repo));
-    }
-  }
-
-  protected static List<Component> getAllComponents(final Repository repo) {
-    try (StorageTx tx = repo.facet(StorageFacet.class).txSupplier().get()) {
-      tx.begin();
-
-      return newArrayList(tx.browseComponents(tx.findBucket(repo)));
-    }
-  }
-
-  protected static Asset findAsset(final Repository repo, final String name) {
-    try (StorageTx tx = getStorageTx(repo)) {
-      tx.begin();
-      return tx.findAssetWithProperty(P_NAME, name, tx.findBucket(repo));
-    }
-  }
-
-  protected static StorageTx getStorageTx(final Repository repository) {
-    return repository.facet(StorageFacet.class).txSupplier().get();
+    return componentAssetTestHelper.getLastDownloadedTime(repository, assetName);
   }
 
   /**
@@ -337,7 +276,7 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
                                              final int contentMaxAge,
                                              final int metadataMaxAge) throws Exception
   {
-    Configuration configuration = proxyRepository.getConfiguration();
+    Configuration configuration = proxyRepository.getConfiguration().copy();
     configuration.attributes("proxy").set("contentMaxAge", Integer.toString(contentMaxAge));
     configuration.attributes("proxy").set("metadataMaxAge", Integer.toString(metadataMaxAge));
     repositoryManager.update(configuration);

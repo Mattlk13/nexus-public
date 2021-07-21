@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -76,30 +80,18 @@ Ext.define('NX.ext.form.field.ItemSelector', {
    * @param button
    */
   customizeButton: function (name, button) {
-    // remove icon
-    delete button.iconCls;
+    var icons = {
+      top: 'x-fa fa-angle-double-up',
+      up: 'x-fa fa-angle-up',
+      add: 'x-fa fa-angle-right',
+      remove: 'x-fa fa-angle-left',
+      addAll: 'x-fa fa-angle-double-right',
+      removeAll: 'x-fa fa-angle-double-left',
+      down: 'x-fa fa-angle-down',
+      bottom: 'x-fa fa-angle-double-down'
+    };
 
-    // replace with glyph
-    switch (name) {
-      case 'top':
-        button.glyph = 'xf102@FontAwesome'; // fa-angle-double-up
-        break;
-      case 'up':
-        button.glyph = 'xf106@FontAwesome'; // fa-angle-up
-        break;
-      case 'add':
-        button.glyph = 'xf105@FontAwesome'; // fa-angle-right
-        break;
-      case 'remove':
-        button.glyph = 'xf104@FontAwesome'; // fa-angle-left
-        break;
-      case 'down':
-        button.glyph = 'xf107@FontAwesome'; // fa-angle-down
-        break;
-      case 'bottom':
-        button.glyph = 'xf103@FontAwesome'; // fa-angle-double-down
-        break;
-    }
+    button.iconCls = icons[name];
   },
 
   createList: function (title) {
@@ -170,6 +162,20 @@ Ext.define('NX.ext.form.field.ItemSelector', {
     });
   },
 
+  onAddAllBtnClick:function() {
+    var me = this, items = me.fromField.getStore().getData().items;
+    while (items.length > 0) {
+      me.moveRec(true, items[0])
+    }
+  },
+
+  onRemoveAllBtnClick:function() {
+    var me = this, items = me.toField.getStore().getData().items;
+    while (items.length > 0) {
+      me.moveRec(false, items[0])
+    }
+  },
+
   /**
    * Ext.ux.form.ItemSelector defers setting value if store is not loaded,
    * which messes up the logic in Ext.form.Basic.setValues()
@@ -178,10 +184,31 @@ Ext.define('NX.ext.form.field.ItemSelector', {
    * @override
    */
   setValue: function(value) {
-    this.callParent(arguments);
+    if (this.store) {
+      if (this.valueAsString) {
+        if (Array.isArray(value)) {
+          this.callParent(arguments);
+        }
+        else {
+          this.callParent(value ? [value.split(',')] : undefined);
+        }
+      }
+      else {
+        this.callParent(arguments);
+      }
+    }
 
     // HACK: force original value to reset, to prevent always dirty forms when store has not loaded when form initially sets values.
     this.resetOriginalValue();
+  },
+
+  getValue: function() {
+    if (this.valueAsString) {
+      return this.callParent().toString();
+    }
+    else {
+      return this.callParent();
+    }
   },
 
   // HACK: avoid exceptions when the store is reloaded
@@ -226,6 +253,14 @@ Ext.define('NX.ext.form.field.ItemSelector', {
       me.store.un('load', me.populateFromStore, me);
     }
     this.callParent();
+  },
+
+  getRecordsForValue: function () {
+    var me = this;
+    if (!me.store) {
+      return [];
+    }
+    return this.callParent(arguments);
   },
 
   onEnable: function() {

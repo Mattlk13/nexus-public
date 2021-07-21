@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.sonatype.nexus</groupId>
     <artifactId>nexus-components</artifactId>
-    <version>3.21.0-SNAPSHOT</version>
+    <version>3.33.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>nexus-repository</artifactId>
@@ -31,6 +31,21 @@
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-common</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-repository-config</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-repository-services</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-repository-view</artifactId>
     </dependency>
 
     <dependency>
@@ -166,8 +181,14 @@
     </dependency>
 
     <dependency>
-      <groupId>org.sonatype.goodies</groupId>
-      <artifactId>goodies-testsupport</artifactId>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-testsupport</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-test-db</artifactId>
       <scope>test</scope>
     </dependency>
 
@@ -208,7 +229,7 @@
     </dependency>
     
     <dependency>
-      <groupId>com.jayway.awaitility</groupId>
+      <groupId>org.awaitility</groupId>
       <artifactId>awaitility</artifactId>
       <scope>test</scope>
     </dependency>
@@ -217,6 +238,34 @@
 
   <build>
     <plugins>
+      <plugin>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <configuration>
+          <instructions>
+            <!--
+            To maintain binary compatibility these packages had to be split between nexus-repository
+            and nexus-repository-services / nexus-repository-view. They will be merged at runtime by
+            making all those modules fragments of nexus-repository-content.
+            -->
+            <Fragment-Host>org.sonatype.nexus.repository-content</Fragment-Host>
+            <!--
+            Only include local content of these split packages; do the merging at runtime instead.
+            -->
+            <_exportcontents>
+              org.sonatype.nexus.repository.cache;-split-package:=first,
+              org.sonatype.nexus.repository.upload;-split-package:=first,
+              org.sonatype.nexus.repository.view;-split-package:=first,
+              *
+            </_exportcontents>
+            <!--
+            Only resolve this fragment when orient support is deployed.
+            -->
+            <Require-Bundle>org.sonatype.nexus.orient</Require-Bundle>
+          </instructions>
+        </configuration>
+      </plugin>
+
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>

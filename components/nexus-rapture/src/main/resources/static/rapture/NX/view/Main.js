@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -97,7 +101,7 @@ Ext.define('NX.view.Main', {
         name: 'browse',
         title: NX.I18n.get('Header_BrowseMode_Title'),
         tooltip: NX.I18n.get('Header_BrowseMode_Tooltip'),
-        glyph: 'xf1b2@FontAwesome', /* fa-cube */
+        iconCls: 'x-fa fa-cube',
         autoHide: true,
         collapseMenu: true
       },
@@ -106,7 +110,7 @@ Ext.define('NX.view.Main', {
         name: 'admin',
         title: NX.I18n.get('Header_AdminMode_Title'),
         tooltip: NX.I18n.get('Header_AdminMode_Tooltip'),
-        glyph: 'xf013@FontAwesome', /* fa-gear */
+        iconCls: 'x-fa fa-cog',
         autoHide: true,
         collapseMenu: false
       },
@@ -118,7 +122,7 @@ Ext.define('NX.view.Main', {
         xtype: 'button',
         name: 'metric-health',
         tooltip: NX.I18n.get('Header_Health_Tooltip'),
-        glyph: 'xf058@FontAwesome', /* fa-check-circle */
+        iconCls: 'x-fa fa-check-circle',
         autoHide: true,
         hidden: true,
         collapseMenu: false,
@@ -134,7 +138,7 @@ Ext.define('NX.view.Main', {
         xtype: 'nx-header-mode',
         name: 'user',
         title: NX.I18n.get('Header_UserMode_Title'),
-        glyph: 'xf007@FontAwesome', // fa-user
+        iconCls: 'x-fa fa-user',
         autoHide: false,
         collapseMenu: false
       },

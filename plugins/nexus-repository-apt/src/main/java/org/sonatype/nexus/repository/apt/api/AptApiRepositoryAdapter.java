@@ -18,7 +18,7 @@ import javax.inject.Named;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.apt.internal.AptFormat;
+import org.sonatype.nexus.repository.apt.AptFormat;
 import org.sonatype.nexus.repository.rest.api.SimpleApiRepositoryAdapter;
 import org.sonatype.nexus.repository.rest.api.model.AbstractApiRepository;
 import org.sonatype.nexus.repository.routing.RoutingRuleStore;
@@ -47,9 +47,15 @@ public class AptApiRepositoryAdapter
 
     switch (repository.getType().toString()) {
       case HostedType.NAME:
-        return new AptHostedApiRepository(name, url, online, getHostedStorageAttributes(repository),
-            getCleanupPolicyAttributes(repository), createAptHostedRepositoriesAttributes(repository),
-            createAptSigningRepositoriesAttributes(repository));
+        return new AptHostedApiRepository(
+            name,
+            url,
+            online,
+            getHostedStorageAttributes(repository),
+            getCleanupPolicyAttributes(repository),
+            createAptHostedRepositoriesAttributes(repository),
+            createAptSigningRepositoriesAttributes(repository),
+            getComponentAttributes(repository));
       case ProxyType.NAME:
         return new AptProxyApiRepository(name, url, online, getHostedStorageAttributes(repository),
             getCleanupPolicyAttributes(repository), createAptProxyRepositoriesAttributes(repository),

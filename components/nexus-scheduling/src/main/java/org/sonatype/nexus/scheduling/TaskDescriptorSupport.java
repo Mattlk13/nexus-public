@@ -140,6 +140,11 @@ public abstract class TaskDescriptorSupport
   }
 
   @Override
+  public TaskConfiguration createTaskConfiguration() {
+    return new TaskConfiguration();
+  }
+
+  @Override
   public void initializeConfiguration(final TaskConfiguration configuration) {
     // no-op
   }
@@ -167,4 +172,10 @@ public abstract class TaskDescriptorSupport
   public boolean isRecoverable() {
     return requestRecovery;
   }
+
+  @Override
+  public boolean allowConcurrentRun() {
+    return true;
+  }
+
 }

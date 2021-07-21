@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.BlobIdLocationResolver;
+import org.sonatype.nexus.blobstore.BlobStoreReconciliationLogger;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
@@ -55,16 +56,18 @@ import static java.nio.file.Files.write;
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.fail;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.verifyZeroInteractions;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.DirectPathLocationStrategy.DIRECT_PATH_ROOT;
 import static org.sonatype.nexus.blobstore.api.BlobAttributesConstants.HEADER_PREFIX;
@@ -116,6 +119,9 @@ public class FileBlobStoreTest
   @Mock
   DryRunPrefix dryRunPrefix;
 
+  @Mock
+  BlobStoreReconciliationLogger reconciliationLogger;
+
   public static final ImmutableMap<String, String> TEST_HEADERS = ImmutableMap.of(
       CREATED_BY_HEADER, "test",
       BLOB_NAME_HEADER, "test/randomData.bin"
@@ -152,7 +158,7 @@ public class FileBlobStoreTest
 
     underTest = new FileBlobStore(util.createTempDir().toPath(),
         blobIdLocationResolver, fileOperations, metrics, configuration,
-        appDirs, nodeAccess, dryRunPrefix);
+        appDirs, nodeAccess, dryRunPrefix, reconciliationLogger);
 
     when(loadingCache.getUnchecked(any())).thenReturn(underTest.new FileBlob(new BlobId("fakeid")));
 
@@ -188,6 +194,8 @@ public class FileBlobStoreTest
     doThrow(new FileSystemException(null)).when(fileOperations).hardLink(any(), any());
 
     underTest.create(path, TEST_HEADERS, 0, HashCode.fromString("da39a3ee5e6b4b0d3255bfef95601890afd80709"));
+
+    verifyZeroInteractions(reconciliationLogger);
   }
 
   @Test
@@ -202,6 +210,7 @@ public class FileBlobStoreTest
 
     assertThat(blob.getMetrics().getContentSize(), is(size));
     assertThat(blob.getMetrics().getSha1Hash(), is("356a192b7913b04c54574d18c28d46e6395428ab"));
+    verify(reconciliationLogger).logBlobCreated(eq(underTest), any());
   }
 
   @Test
@@ -217,6 +226,7 @@ public class FileBlobStoreTest
     underTest.create(path, TEST_HEADERS, size, sha1);
 
     verify(fileOperations, times(4)).exists(any());
+    verify(reconciliationLogger, times(1)).logBlobCreated(eq(underTest), any());
   }
 
   @Test
@@ -248,7 +258,8 @@ public class FileBlobStoreTest
       "sha1 = cbd5bce1c926e6b55b6b4037ce691b8f9e5dea0f").getBytes(StandardCharsets.ISO_8859_1);
 
   @Test
-  public void testMaybeRebuildDeletedBlobIndex() throws Exception {
+  public void testDoCompact_RebuildMetadataNeeded() throws Exception {
+    when(fileOperations.delete(any())).thenReturn(true);
     when(nodeAccess.isOldestNode()).thenReturn(true);
     underTest.doStart();
 
@@ -256,30 +267,28 @@ public class FileBlobStoreTest
         deletedBlobStoreProperties);
 
     checkDeletionsIndex(true);
-
     setRebuildMetadataToTrue();
 
-    underTest.maybeRebuildDeletedBlobIndex();
+    underTest.doCompact(blobStoreUsageChecker);
 
-    checkDeletionsIndex(false);
+    checkDeletionsIndex(true);
+
+    verify(blobStoreUsageChecker, atLeastOnce()).test(any(), any(), any());
   }
 
-
   @Test
-  public void testMaybeRebuildDeletedBlobIndex_NotOldest() throws Exception {
+  public void testDoCompact_RebuildMetadataNeeded_NotOldestNode() throws Exception {
     when(nodeAccess.isOldestNode()).thenReturn(false);
     underTest.doStart();
 
-    write(fullPath.resolve("e27f83a9-dc18-4818-b4ca-ae8a9cb813c7.properties"),
-        deletedBlobStoreProperties);
-
     checkDeletionsIndex(true);
-
     setRebuildMetadataToTrue();
 
-    underTest.maybeRebuildDeletedBlobIndex();
+    underTest.doCompact(blobStoreUsageChecker);
 
     checkDeletionsIndex(true);
+
+    verify(blobStoreUsageChecker, never()).test(any(), any(), any());
   }
 
   @Test

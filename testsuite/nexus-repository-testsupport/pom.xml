@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.sonatype.nexus.testsuite</groupId>
     <artifactId>nexus-testsuite</artifactId>
-    <version>3.21.0-SNAPSHOT</version>
+    <version>3.33.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>nexus-repository-testsupport</artifactId>
@@ -44,6 +44,18 @@
     </dependency>
 
     <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-repository-content</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-repository-services</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
       <groupId>org.sonatype.nexus.plugins</groupId>
       <artifactId>nexus-repository-maven</artifactId>
       <scope>provided</scope>
@@ -51,7 +63,7 @@
 
     <dependency>
       <groupId>org.sonatype.nexus.plugins</groupId>
-      <artifactId>nexus-repository-npm</artifactId>
+      <artifactId>nexus-repository-p2</artifactId>
       <scope>provided</scope>
     </dependency>
 
@@ -74,6 +86,12 @@
     </dependency>
 
     <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-ssl</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
       <groupId>org.sonatype.nexus.testsuite</groupId>
       <artifactId>nexus-docker-testsupport</artifactId>
       <optional>true</optional>
@@ -83,6 +101,16 @@
     <!--
     Dependencies that belong to this feature
     -->
+    <dependency>
+      <groupId>org.sonatype.goodies</groupId>
+      <artifactId>goodies-testsupport</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-testsupport</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-test-common</artifactId>
@@ -149,9 +177,20 @@
     </dependency>
 
     <dependency>
-      <groupId>com.jayway.awaitility</groupId>
+      <groupId>org.awaitility</groupId>
       <artifactId>awaitility</artifactId>
     </dependency>
+
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.quartz-scheduler</groupId>
+      <artifactId>quartz</artifactId>
+    </dependency>
+
   </dependencies>
 
   <build>
@@ -181,7 +220,29 @@
         <configuration>
           <instructions>
             <!-- mark Pax-Exam imports as optional; not all are needed at test-time -->
-            <Import-Package>org.ops4j.pax.exam.*;resolution:=optional,*</Import-Package>
+            <Import-Package>
+              org.ops4j.pax.exam.*;resolution:=optional,
+              com.orientechnologies.orient.*;resolution:=optional,
+              org.apache.maven.*;resolution:=optional,
+              org.sonatype.nexus.orient.*;resolution:=optional,
+              com.sonatype.nexus.repository.nuget.*;resolution:=optional,
+              org.sonatype.nexus.repository.apt.*;resolution:=optional,
+              org.sonatype.nexus.repository.bower.*;resolution:=optional,
+              org.sonatype.nexus.repository.cocoapods.*;resolution:=optional,
+              org.sonatype.nexus.repository.docker.*;resolution:=optional,
+              org.sonatype.nexus.repository.gitlfs.*;resolution:=optional,
+              org.sonatype.nexus.repository.golang.*;resolution:=optional,
+              org.sonatype.nexus.repository.maven.*;resolution:=optional,
+              org.sonatype.nexus.repository.p2.*;resolution:=optional,
+              org.sonatype.nexus.repository.rubygems.*;resolution:=optional,
+              org.sonatype.nexus.repository.yum.*;resolution:=optional,
+              org.sonatype.nexus.repository.search.*;resolution:=optional,
+              org.sonatype.nexus.repository.storage.*;resolution:=optional,
+              org.sonatype.nexus.repository.attributes.*;resolution:=optional,
+              org.sonatype.nexus.repository.vulnerability.*;resolution:=optional,
+              org.sonatype.nexus.testsuite.testsupport.cleanup.*;resolution:=optional,
+              *
+            </Import-Package>
           </instructions>
         </configuration>
       </plugin>

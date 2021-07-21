@@ -12,10 +12,11 @@
  */
 package org.sonatype.nexus.repository.content.store;
 
+import java.time.OffsetDateTime;
+import java.util.HashMap;
+
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.repository.content.RepositoryContent;
-
-import org.joda.time.DateTime;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -29,11 +30,11 @@ public abstract class AbstractRepositoryContent
 {
   Integer repositoryId; // NOSONAR: internal repository id
 
-  private NestedAttributesMap attributes;
+  private NestedAttributesMap attributes = new NestedAttributesMap("attributes", new HashMap<>());
 
-  private DateTime created;
+  private OffsetDateTime created;
 
-  private DateTime lastUpdated;
+  private OffsetDateTime lastUpdated;
 
   // RepositoryContent API
 
@@ -43,12 +44,12 @@ public abstract class AbstractRepositoryContent
   }
 
   @Override
-  public DateTime created() {
+  public OffsetDateTime created() {
     return created;
   }
 
   @Override
-  public DateTime lastUpdated() {
+  public OffsetDateTime lastUpdated() {
     return lastUpdated;
   }
 
@@ -71,14 +72,24 @@ public abstract class AbstractRepositoryContent
   /**
    * Sets when this metadata was first created.
    */
-  public void setCreated(final DateTime created) {
+  public void setCreated(final OffsetDateTime created) {
     this.created = checkNotNull(created);
   }
 
   /**
    * Sets when this metadata was last updated.
    */
-  public void setLastUpdated(final DateTime lastUpdated) {
+  public void setLastUpdated(final OffsetDateTime lastUpdated) {
     this.lastUpdated = checkNotNull(lastUpdated);
+  }
+
+  @Override
+  public String toString() {
+    return "AbstractRepositoryContent{" +
+        "repositoryId=" + repositoryId +
+        ", attributes=" + attributes +
+        ", created=" + created +
+        ", lastUpdated=" + lastUpdated +
+        '}';
   }
 }

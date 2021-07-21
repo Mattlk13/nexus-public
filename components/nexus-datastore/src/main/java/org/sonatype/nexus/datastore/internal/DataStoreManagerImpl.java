@@ -31,7 +31,6 @@ import org.sonatype.nexus.datastore.DataStoreConfigurationManager;
 import org.sonatype.nexus.datastore.DataStoreDescriptor;
 import org.sonatype.nexus.datastore.DataStoreRestorer;
 import org.sonatype.nexus.datastore.DataStoreUsageChecker;
-import org.sonatype.nexus.datastore.api.ContentDataAccess;
 import org.sonatype.nexus.datastore.api.DataAccess;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.datastore.api.DataSessionSupplier;
@@ -50,6 +49,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static java.lang.Integer.MAX_VALUE;
 import static java.util.Optional.ofNullable;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED_NAMED;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.STORAGE;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
 import static org.sonatype.nexus.common.text.Strings2.lower;
@@ -70,9 +70,7 @@ public class DataStoreManagerImpl
 {
   private static final Key<Class<DataAccess>> DATA_ACCESS_KEY = new Key<Class<DataAccess>>(){/**/};
 
-  private static final DataAccessMediator CONFIG_DATA_ACCESS_MEDIATOR = new DataAccessMediator(false);
-
-  private static final DataAccessMediator CONTENT_DATA_ACCESS_MEDIATOR = new DataAccessMediator(true);
+  private static final DataAccessMediator DATA_ACCESS_MEDIATOR = new DataAccessMediator();
 
   private final boolean enabled;
 
@@ -90,8 +88,10 @@ public class DataStoreManagerImpl
 
   private final DataStoreRestorer restorer;
 
+  private volatile boolean frozen;
+
   @Inject
-  public DataStoreManagerImpl(@Named("${nexus.datastore.enabled:-false}") final boolean enabled,
+  public DataStoreManagerImpl(@Named(DATASTORE_ENABLED_NAMED) final boolean enabled,
                               final Map<String, DataStoreDescriptor> dataStoreDescriptors,
                               final Map<String, Provider<DataStore<?>>> dataStorePrototypes,
                               final DataStoreConfigurationManager configurationManager,
@@ -112,14 +112,13 @@ public class DataStoreManagerImpl
   @Override
   protected void doStart() throws Exception {
     if (enabled) {
-      restorer.maybeRestore();
       configurationManager.load().forEach(this::tryRestore);
     }
   }
 
   @Override
   protected void doStop() throws Exception {
-    for (DataStore<?> store : dataStores.values()) {
+    for (DataStore<?> store : browse()) {
       try {
         log.debug("Shutting down {}", store);
         store.shutdown();
@@ -157,6 +156,7 @@ public class DataStoreManagerImpl
 
   private void tryRestore(final DataStoreConfiguration configuration) {
     try {
+      restorer.maybeRestore(configuration);
       doCreate(configuration);
     }
     catch (Exception e) {
@@ -179,14 +179,19 @@ public class DataStoreManagerImpl
     store.start();
 
     // register the appropriate access types with the store
-    beanLocator.watch(DATA_ACCESS_KEY,
-        isContentStore(storeName) ? CONTENT_DATA_ACCESS_MEDIATOR : CONFIG_DATA_ACCESS_MEDIATOR, store);
+    beanLocator.watch(DATA_ACCESS_KEY, DATA_ACCESS_MEDIATOR, store);
 
-    // check someone hasn't just created the same store; if our store is a duplicate then stop it
-    if (dataStores.putIfAbsent(lower(storeName), store) != null) {
-      log.debug("Stopping duplicate {}", store);
-      store.stop();
-      throw new IllegalStateException("Duplicate request to create " + storeName + " data store");
+    synchronized (dataStores) {
+      if (frozen) {
+        store.freeze(); // mark as frozen before making store visible to other components
+      }
+
+      // check someone hasn't just created the same store; if our store is a duplicate then stop it
+      if (dataStores.putIfAbsent(lower(storeName), store) != null) {
+        log.debug("Stopping duplicate {}", store);
+        store.stop();
+        throw new IllegalStateException("Duplicate request to create " + storeName + " data store");
+      }
     }
 
     log.debug("Started {}", store);
@@ -260,7 +265,6 @@ public class DataStoreManagerImpl
   public boolean delete(final String storeName) throws Exception {
     checkNotNull(storeName);
 
-    checkState(isContentStore(storeName), "%s data store cannot be removed", storeName);
     checkState(!usageChecker.get().isDataStoreUsed(storeName),
         "%s data store is in use by at least one repository", storeName);
 
@@ -284,6 +288,27 @@ public class DataStoreManagerImpl
     checkNotNull(storeName);
 
     return dataStores.containsKey(lower(storeName));
+  }
+
+  @Override
+  public void freeze() {
+    synchronized (dataStores) {
+      frozen = true;
+      browse().forEach(DataStore::freeze);
+    }
+  }
+
+  @Override
+  public void unfreeze() {
+    synchronized (dataStores) {
+      frozen = false;
+      browse().forEach(DataStore::unfreeze);
+    }
+  }
+
+  @Override
+  public boolean isFrozen() {
+    return frozen;
   }
 
   /**
@@ -318,24 +343,14 @@ public class DataStoreManagerImpl
   private static class DataAccessMediator
       implements Mediator<Named, Class<DataAccess>, DataStore<?>>
   {
-    private final boolean isContentStore;
-
-    DataAccessMediator(final boolean isContentStore) {
-      this.isContentStore = isContentStore;
-    }
-
     @Override
     public void add(final BeanEntry<Named, Class<DataAccess>> entry, final DataStore<?> store) {
-      if (isContentStore == ContentDataAccess.class.isAssignableFrom(entry.getValue())) {
         store.register(entry.getValue());
-      }
     }
 
     @Override
     public void remove(final BeanEntry<Named, Class<DataAccess>> entry, final DataStore<?> store) {
-      if (isContentStore == ContentDataAccess.class.isAssignableFrom(entry.getValue())) {
         store.unregister(entry.getValue());
-      }
     }
   }
 }

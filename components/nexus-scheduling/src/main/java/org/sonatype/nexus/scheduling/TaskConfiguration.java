@@ -22,6 +22,8 @@ import javax.annotation.Nullable;
 
 import org.sonatype.nexus.logging.task.TaskLogInfo;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
 import org.joda.time.DateTime;
@@ -54,6 +56,7 @@ import static com.google.common.base.Preconditions.checkState;
  *
  * @since 3.0
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class TaskConfiguration
     implements TaskLogInfo
 {
@@ -77,6 +80,8 @@ public class TaskConfiguration
 
   static final String ALERT_EMAIL_KEY = ".alertEmail";
 
+  static final String NOTIFICATION_CONDITION_KEY = ".notificationCondition";
+
   static final String CREATED_KEY = ".created";
 
   static final String UPDATED_KEY = ".updated";
@@ -85,6 +90,11 @@ public class TaskConfiguration
 
   static final String RECOVERABLE_KEY = ".recoverable";
 
+  static final String EXPOSED_KEY = ".exposed";
+
+  static final String LOG_STATE_KEY = ".logState";
+
+  @JsonProperty("configuration")
   private final Map<String, String> configuration;
 
   public TaskConfiguration() {
@@ -177,9 +187,16 @@ public class TaskConfiguration
     return getBoolean(VISIBLE_KEY, true);
   }
 
-
   public void setVisible(final boolean visible) {
     setBoolean(VISIBLE_KEY, visible);
+  }
+
+  public boolean isExposed() {
+    return getBoolean(EXPOSED_KEY, true);
+  }
+
+  public void setExposed(final boolean exposed) {
+    setBoolean(EXPOSED_KEY, exposed);
   }
 
   @Nullable
@@ -189,6 +206,14 @@ public class TaskConfiguration
 
   public void setAlertEmail(final String email) {
     setString(ALERT_EMAIL_KEY, email);
+  }
+
+  public TaskNotificationCondition getNotificationCondition() {
+    return TaskNotificationCondition.valueOf(getString(NOTIFICATION_CONDITION_KEY, TaskNotificationCondition.DEFAULT.name()));
+  }
+
+  public void setNotificationCondition(final TaskNotificationCondition condition) {
+    setString(NOTIFICATION_CONDITION_KEY, condition.name());
   }
 
   @Nullable
@@ -251,6 +276,14 @@ public class TaskConfiguration
     setString(LAST_RUN_STATE_END_STATE, endState.name());
     setLong(LAST_RUN_STATE_RUN_STARTED, runStarted.getTime());
     setLong(LAST_RUN_STATE_RUN_DURATION, runDuration);
+  }
+
+  public boolean isLogTaskState() {
+    return getBoolean(LOG_STATE_KEY, true);
+  }
+
+  public void setLogTaskState(final boolean logTaskState) {
+    setBoolean(LOG_STATE_KEY, logTaskState);
   }
 
   //

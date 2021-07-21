@@ -28,6 +28,7 @@ import javax.annotation.Nullable;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.httpclient.HttpClientPlan;
+import org.sonatype.nexus.httpclient.PreemptiveAuthHttpRequestInterceptor;
 import org.sonatype.nexus.httpclient.SSLContextSelector;
 import org.sonatype.nexus.httpclient.internal.NexusHttpRoutePlanner;
 
@@ -41,6 +42,7 @@ import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.Credentials;
 import org.apache.http.auth.NTCredentials;
 import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.AuthenticationStrategy;
 import org.apache.http.client.RedirectStrategy;
 import org.apache.http.client.config.CookieSpecs;
 import org.apache.http.impl.client.StandardHttpRequestRetryHandler;
@@ -124,6 +126,24 @@ public class ConfigurationCustomizer
     }
     if (configuration.getRedirectStrategy() != null) {
       apply(configuration.getRedirectStrategy(), plan);
+    }
+    if (configuration.getAuthenticationStrategy() != null) {
+      apply(configuration.getAuthenticationStrategy(), plan);
+    }
+    if (configuration.getNormalizeUri() != null) {
+      plan.getRequest().setNormalizeUri(configuration.getNormalizeUri());
+    }
+    if (Boolean.TRUE.equals(configuration.getDisableContentCompression())) {
+      plan.getClient().disableContentCompression();
+    }
+  }
+
+  /**
+   * Apply selected AuthenticationStrategy to plan.
+   */
+  private void apply(final AuthenticationStrategy authenticationStrategy, final HttpClientPlan plan) {
+    if (authenticationStrategy != null) {
+      plan.getClient().setTargetAuthenticationStrategy(authenticationStrategy);
     }
   }
 
@@ -267,6 +287,10 @@ public class ConfigurationCustomizer
       else {
         plan.addCredentials(AuthScope.ANY, credentials);
         plan.getRequest().setTargetPreferredAuthSchemes(authSchemes);
+      }
+
+      if (authentication.isPreemptive()) {
+        plan.getClient().addInterceptorFirst(new PreemptiveAuthHttpRequestInterceptor());
       }
     }
   }

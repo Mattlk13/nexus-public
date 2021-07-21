@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -39,14 +43,22 @@ Ext.define('NX.coreui.view.component.ComponentAssetInfo', {
     items: [
       {
         xtype: 'nx-button',
+        text: NX.I18n.get('ComponentDetails_View_Vulnerabilities_Button'),
+        iconCls: 'x-fa fa-bug',
+        reference: 'viewVulnerabilitiesButton',
+        action: 'viewVulnerabilities',
+        hidden: true
+      },
+      {
+        xtype: 'nx-button',
         text: NX.I18n.get('FolderInfo_Delete_Button'),
-        glyph: 'xf1f8@FontAwesome' /* fa-trash */,
+        iconCls: 'x-fa fa-trash',
         action: 'deleteFolder',
         hidden: true
       }, {
         xtype: 'nx-button',
         text: NX.I18n.get('AssetInfo_Delete_Button'),
-        glyph: 'xf1f8@FontAwesome' /* fa-trash */,
+        iconCls: 'x-fa fa-trash',
         action: 'deleteAsset',
         hidden: true
       }
@@ -55,25 +67,37 @@ Ext.define('NX.coreui.view.component.ComponentAssetInfo', {
 
   referenceHolder: true,
 
-  items: [{
-    xtype: 'nx-info-panel',
-    reference: 'summaryPanel',
-    titled: 'Summary',
-    collapsible: true
-  }, {
-    xtype: 'nx-info-dependency-snippet-panel',
-    reference: 'dependencySnippetPanel'
-  }, {
-    xtype: 'panel',
-    ui: 'nx-inset',
-    title: 'Attributes',
-    collapsible: true,
-    manageHeight: false,
-    items: [{
-      xtype: 'nx-coreui-component-assetattributes',
-      reference: 'attributesPanel'
-    }]
-  }],
+  items: [
+    {
+      xtype: 'nx-info-panel',
+      reference: 'summaryPanel',
+      titled: 'Summary',
+      collapsible: true
+    },
+    {
+      xtype: 'nx-info-panel',
+      reference: 'vulnerabilityPanel',
+      titled: NX.I18n.get('Component_Vulnerability_Info_Title'),
+      collapsible: true,
+      hidden: true
+    },
+    {
+      xtype: 'nx-info-dependency-snippet-panel',
+      reference: 'dependencySnippetPanel'
+    }, {
+      xtype: 'panel',
+      ui: 'nx-inset',
+      title: 'Attributes',
+      collapsible: true,
+      manageHeight: false,
+      items: [
+        {
+          xtype: 'nx-coreui-component-assetattributes',
+          reference: 'attributesPanel'
+        }
+      ]
+    }
+  ],
 
   savedInfo: {},
 
@@ -152,5 +176,13 @@ Ext.define('NX.coreui.view.component.ComponentAssetInfo', {
 
   getDependencySnippetPanel: function() {
     return this.lookup('dependencySnippetPanel');
+  },
+
+  getVulnerabilityPanel: function() {
+    return this.lookup('vulnerabilityPanel');
+  },
+
+  getViewVulnerabilitiesButton: function() {
+    return this.lookup('viewVulnerabilitiesButton');
   }
 });

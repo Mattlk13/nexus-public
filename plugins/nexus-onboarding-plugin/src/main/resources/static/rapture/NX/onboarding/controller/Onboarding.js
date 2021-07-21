@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -23,6 +27,7 @@ Ext.define('NX.onboarding.controller.Onboarding', {
     'NX.onboarding.step.OnboardingStartStep',
     'NX.onboarding.step.ChangeAdminPasswordStep',
     'NX.onboarding.step.ConfigureAnonymousAccessStep',
+    'NX.onboarding.step.ConfigureAnalyticsCollectionStep',
     'NX.onboarding.step.OnboardingCompleteStep',
     'NX.State'
   ],
@@ -31,6 +36,7 @@ Ext.define('NX.onboarding.controller.Onboarding', {
     'OnboardingStartScreen',
     'ChangeAdminPasswordScreen',
     'ConfigureAnonymousAccessScreen',
+    'ConfigureAnalyticsCollectionScreen',
     'OnboardingCompleteScreen',
     'OnboardingModal'
   ],
@@ -57,7 +63,8 @@ Ext.define('NX.onboarding.controller.Onboarding', {
       },
       controller: {
         '#State': {
-          changed: me.stateChanged
+          changed: me.stateChanged,
+          userAuthenticated: me.stateChanged
         }
       },
       store: {
@@ -82,7 +89,9 @@ Ext.define('NX.onboarding.controller.Onboarding', {
   },
 
   stateChanged: function() {
-    if (NX.State.getValue('onboarding.required') && NX.State.getUser()) {
+    var isOnboardingRequired = NX.State.getValue('onboarding.required'),
+        user = NX.State.getUser();
+    if (isOnboardingRequired && user && user['administrator']) {
       this.loadItems();
     }
   },
@@ -107,12 +116,17 @@ Ext.define('NX.onboarding.controller.Onboarding', {
     }
   },
 
-  itemsLoaded: function (store, records) {
+  itemsLoaded: function (store, records, successful) {
     var me = this;
     me.registerStep('NX.onboarding.step.OnboardingStartStep');
-    records.forEach(function(record) {
-      me.registerStep('NX.onboarding.step.' + record.get('type') + 'Step');
-    });
+    if (successful && Array.isArray(records)) {
+      records.forEach(function(record) {
+        me.registerStep('NX.onboarding.step.' + record.get('type') + 'Step');
+      });
+    }
+    else {
+      NX.Messages.error(NX.I18n.get('Onboarding_LoadStepsError'));
+    }
     me.registerStep('NX.onboarding.step.OnboardingCompleteStep');
 
     Ext.widget('nx-onboarding-modal');

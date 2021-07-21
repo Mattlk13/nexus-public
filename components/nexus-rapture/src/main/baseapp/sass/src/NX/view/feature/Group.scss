@@ -9,7 +9,7 @@
   .item-wrap {
     border: 1px solid $color-none;
     float: left;
-    width: 200px;
+    width: 225px;
     height: 42px;
     margin: 5px;
     padding: 5px;
@@ -34,5 +34,16 @@
     height: 32px;
     width: 32px;
     margin-right: 5px;
+  }
+
+  .x-fa {
+    margin-top: 2px;
+    margin-right: 5px;
+    text-align: center;
+  }
+
+  .x-fa-icon-text {
+    position: relative;
+    top: -7px;
   }
 }

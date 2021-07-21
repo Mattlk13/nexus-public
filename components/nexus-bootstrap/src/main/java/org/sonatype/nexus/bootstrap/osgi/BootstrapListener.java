@@ -40,16 +40,18 @@ import static java.lang.Boolean.parseBoolean;
 import static java.util.prefs.Preferences.userRoot;
 import static org.apache.karaf.features.FeaturesService.Option.NoAutoRefreshBundles;
 import static org.apache.karaf.features.FeaturesService.Option.NoAutoRefreshManagedBundles;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_DEVELOPER;
+import static org.sonatype.nexus.common.app.FeatureFlags.ORIENT_ENABLED;
 
 /**
  * {@link ServletContextListener} that bootstraps an OSGi-based application.
- * 
+ *
  * @since 3.0
  */
 public class BootstrapListener
     implements ServletContextListener
 {
-
   private static final String NEXUS_LOAD_AS_OSS_PROP_NAME = "nexus.loadAsOSS";
 
   private static final String EDITION_PRO = "edition_pro";
@@ -79,7 +81,7 @@ public class BootstrapListener
     log.info("Initializing");
 
     ServletContext servletContext = event.getServletContext();
-    
+
     try {
       Properties properties = System.getProperties();
       if (properties == null) {
@@ -103,7 +105,7 @@ public class BootstrapListener
         }
       }
 
-      selectDbFeature(properties);
+      selectDatastoreFeature(properties);
 
       // pass bootstrap properties to embedded servlet listener
       servletContext.setAttribute("nexus.properties", properties);
@@ -229,14 +231,38 @@ public class BootstrapListener
     }
   }
 
+  private static void selectDatastoreFeature(final Properties properties) {
+    // datastore developer mode includes datastore user mode
+    if (parseBoolean(properties.getProperty(DATASTORE_DEVELOPER, "false"))) {
+      properties.setProperty(DATASTORE_ENABLED, "true");
+    }
+
+    if (parseBoolean(properties.getProperty(DATASTORE_ENABLED, "false"))) {
+      // datastore mode disables orient
+      properties.setProperty(ORIENT_ENABLED, "false");
+
+      // datastore mode, but not developer mode
+      if (!parseBoolean(properties.getProperty(DATASTORE_DEVELOPER, "false"))) {
+        // exclude unfinished format features
+      }
+    }
+
+    selectDbFeature(properties);
+  }
+
   private static void selectDbFeature(final Properties properties) {
-    if (parseBoolean(properties.getProperty("nexus.orient.enabled", "true"))) {
+    if (parseBoolean(properties.getProperty(ORIENT_ENABLED, "true"))) {
       properties.setProperty(NEXUS_DB_FEATURE, "nexus-orient");
-      properties.setProperty("nexus.orient.enabled", "true");
+      properties.setProperty(ORIENT_ENABLED, "true");
     }
     else {
       properties.setProperty(NEXUS_DB_FEATURE, "nexus-datastore-mybatis");
-      properties.setProperty("nexus.datastore.enabled", "true");
+      properties.setProperty(DATASTORE_ENABLED, "true");
+      properties.setProperty("nexus.quartz.jobstore.jdbc", "true");
+      if (NEXUS_OSS_EDITION.equals(properties.getProperty(NEXUS_EDITION))) {
+        properties.setProperty("nexus-exclude-features",
+            "nexus-cma-feature," + properties.getProperty("nexus-exclude-features", ""));
+      }
     }
   }
 

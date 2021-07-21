@@ -22,6 +22,7 @@ import org.sonatype.nexus.httpclient.config.HttpClientConfiguration;
 import org.sonatype.nexus.httpclient.config.ProxyConfiguration;
 import org.sonatype.nexus.internal.httpclient.AuthenticationConfigurationDeserializer;
 
+import org.apache.http.client.AuthenticationStrategy;
 import org.apache.http.client.RedirectStrategy;
 
 /**
@@ -54,6 +55,18 @@ public class OrientHttpClientConfiguration
   @Nullable
   private AuthenticationConfiguration authentication;
 
+  @Valid
+  @Nullable
+  private AuthenticationStrategy authenticationStrategy;
+
+  @Valid
+  @Nullable
+  private Boolean shouldNormalizeUri;
+
+  @Valid
+  @Nullable
+  private Boolean disableContentCompression;
+
   @Nullable
   public ConnectionConfiguration getConnection() {
     return connection;
@@ -82,12 +95,45 @@ public class OrientHttpClientConfiguration
   }
 
   @Nullable
+  @Override
+  public AuthenticationStrategy getAuthenticationStrategy() {
+    return authenticationStrategy;
+  }
+
+  @Override
+  public void setAuthenticationStrategy(
+      @Nullable final AuthenticationStrategy authenticationStrategy)
+  {
+    this.authenticationStrategy = authenticationStrategy;
+  }
+
+  @Nullable
   public RedirectStrategy getRedirectStrategy() {
     return redirectStrategy;
   }
 
   public void setRedirectStrategy(@Nullable final RedirectStrategy redirectStrategy) {
     this.redirectStrategy = redirectStrategy;
+  }
+
+  @Override
+  public Boolean getNormalizeUri() {
+    return shouldNormalizeUri;
+  }
+
+  @Override
+  public void setNormalizeUri(final Boolean normalizeUri) {
+    this.shouldNormalizeUri = normalizeUri;
+  }
+
+  @Override
+  public Boolean getDisableContentCompression() {
+    return disableContentCompression;
+  }
+
+  @Override
+  public void setDisableContentCompression(final Boolean disableContentCompression) {
+    this.disableContentCompression = disableContentCompression;
   }
 
   public OrientHttpClientConfiguration copy() {
@@ -106,6 +152,8 @@ public class OrientHttpClientConfiguration
         // no real cloning/copying needed, as we are allowed to use a singleton instance
         copy.redirectStrategy = redirectStrategy;
       }
+      copy.shouldNormalizeUri = shouldNormalizeUri;
+      copy.disableContentCompression = disableContentCompression;
       return copy;
     }
     catch (CloneNotSupportedException e) {

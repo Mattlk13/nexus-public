@@ -15,6 +15,7 @@ package org.sonatype.nexus.repository.content.store;
 import java.util.Collection;
 import java.util.Optional;
 
+import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.datastore.api.ContentDataAccess;
 import org.sonatype.nexus.datastore.api.SchemaTemplate;
@@ -52,17 +53,25 @@ public interface ContentRepositoryDAO
   Optional<ContentRepository> readContentRepository(@Param("configRepositoryId") EntityId configRepositoryId);
 
   /**
+   * Retrieves the latest attributes of the given content repository in the content data store.
+   *
+   * @param contentRepository the content repository to read
+   * @return repository attributes if found
+   */
+  Optional<NestedAttributesMap> readContentRepositoryAttributes(ContentRepository contentRepository);
+
+  /**
    * Updates the attributes of the given content repository in the content data store.
    *
    * @param contentRepository the content repository to update
    */
-  void updateContentRepositoryAttributes(ContentRepositoryData contentRepository);
+  void updateContentRepositoryAttributes(ContentRepository contentRepository);
 
   /**
-   * Deletes a content repository from the content data store based on its config identity.
+   * Deletes a content repository from the content data store.
    *
-   * @param configRepositoryId the config repository id
+   * @param contentRepository the content repository to delete
    * @return {@code true} if the content repository was deleted
    */
-  boolean deleteContentRepository(@Param("configRepositoryId") EntityId configRepositoryId);
+  boolean deleteContentRepository(ContentRepository contentRepository);
 }

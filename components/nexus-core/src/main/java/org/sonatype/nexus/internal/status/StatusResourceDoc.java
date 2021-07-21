@@ -28,7 +28,7 @@ import io.swagger.annotations.ApiResponses;
  *
  * @since 3.15
  */
-@Api("status")
+@Api("Status")
 public interface StatusResourceDoc
 {
   /**
@@ -61,7 +61,7 @@ public interface StatusResourceDoc
   @GET
   @ApiOperation("Health check endpoint that returns the results of the system status checks")
   @ApiResponses({
-      @ApiResponse(code = 200, message = "The system status check results")
+      @ApiResponse(code = 200, message = "The system status check results", response = Result.class, responseContainer = "Map")
   })
   SortedMap<String, Result> getSystemStatusChecks();
 

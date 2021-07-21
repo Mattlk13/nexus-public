@@ -24,8 +24,8 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
-import org.hibernate.validator.constraints.NotBlank;
-import org.hibernate.validator.constraints.NotEmpty;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotEmpty;
 
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 import static org.apache.http.HttpStatus.SC_CONFLICT;
@@ -35,7 +35,7 @@ import static org.apache.http.HttpStatus.SC_FORBIDDEN;
 /**
  * @since 3.19
  */
-@Api(value = "Security: Certificates")
+@Api(value = "Security: certificates")
 public interface CertificateApiResourceDoc
 {
   @ApiOperation("Helper method to retrieve certificate details from a remote system.")
@@ -55,8 +55,7 @@ public interface CertificateApiResourceDoc
 
   @ApiOperation("Add a certificate to the trust store.")
   @ApiResponses(value = {
-      @ApiResponse(code = SC_CREATED, message = "The certificate was successfully added.",
-          reference = "com.sonatype.nexus.ssl.plugin.internal.rest.ApiCertificate"),
+      @ApiResponse(code = SC_CREATED, message = "The certificate was successfully added.", response = ApiCertificate.class),
       @ApiResponse(code = SC_CONFLICT,
           message = "The certificate already exists in the system."),
       @ApiResponse(code = SC_FORBIDDEN, message = "Insufficient permissions to add certificate to the trust store.")})

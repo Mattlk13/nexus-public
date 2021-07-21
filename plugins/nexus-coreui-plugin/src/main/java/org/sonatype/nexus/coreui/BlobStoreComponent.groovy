@@ -35,19 +35,21 @@ import org.sonatype.nexus.common.app.ApplicationDirectories
 import org.sonatype.nexus.common.collect.NestedAttributesMap
 import org.sonatype.nexus.extdirect.DirectComponentSupport
 import org.sonatype.nexus.extdirect.model.StoreLoadParameters
+import org.sonatype.nexus.rapture.PasswordPlaceholder
 import org.sonatype.nexus.repository.manager.RepositoryManager
 import org.sonatype.nexus.repository.security.RepositoryPermissionChecker
 import org.sonatype.nexus.security.privilege.ApplicationPermission
 import org.sonatype.nexus.validation.Validate
 import org.sonatype.nexus.validation.group.Create
 import org.sonatype.nexus.validation.group.Update
+import org.sonatype.nexus.blobstore.api.ChangeRepositoryBlobstoreDataService
 
 import com.codahale.metrics.annotation.ExceptionMetered
 import com.codahale.metrics.annotation.Timed
 import com.softwarementors.extjs.djn.config.annotations.DirectAction
 import com.softwarementors.extjs.djn.config.annotations.DirectMethod
 import org.apache.shiro.authz.annotation.RequiresPermissions
-import org.hibernate.validator.constraints.NotEmpty
+import javax.validation.constraints.NotEmpty
 
 import static java.util.Collections.singletonList
 import static org.sonatype.nexus.security.BreadActions.READ
@@ -88,6 +90,10 @@ class BlobStoreComponent
   @Inject
   Map<String, FillPolicy> fillPolicies
 
+  @Nullable
+  @Inject
+  ChangeRepositoryBlobstoreDataService changeRepositoryBlobstoreDataService;
+
   @DirectMethod
   @Timed
   @ExceptionMetered
@@ -102,6 +108,22 @@ class BlobStoreComponent
         collect { it as BlobStoreGroup }
 
     blobStores.collect { asBlobStoreXO(it, blobStoreGroups) }
+  }
+
+  @DirectMethod
+  @Timed
+  @ExceptionMetered
+  List<BlobStoreXO> readNames() {
+    repositoryPermissionChecker.ensureUserHasAnyPermissionOrAdminAccess(
+        singletonList(new ApplicationPermission('blobstores', READ)),
+        READ,
+        repositoryManager.browse()
+    )
+    def blobStores = blobStoreManager.browse()
+    def blobStoreGroups = blobStores.findAll { it.blobStoreConfiguration.type == BlobStoreGroup.TYPE }.
+        collect { it as BlobStoreGroup }
+
+    blobStores.collect { asBlobStoreXO(it, blobStoreGroups, true) }
   }
 
   @DirectMethod
@@ -137,16 +159,25 @@ class BlobStoreComponent
   @ExceptionMetered
   @RequiresPermissions('nexus:blobstores:read')
   List<BlobStoreTypeXO> readTypes() {
-    blobStoreDescriptors.collect { key, descriptor ->
+    List<BlobStoreTypeXO> readTypes = blobStoreDescriptors.collect { key, descriptor ->
       new BlobStoreTypeXO(
           id: key,
           name: descriptor.name,
           formFields: descriptor.formFields.collect { FormFieldXO.create(it) },
           customFormName: descriptor.customFormName(),
           isModifiable: descriptor.isModifiable(),
+          isConnectionTestable: descriptor.isConnectionTestable(),
           isEnabled: descriptor.isEnabled()
       )
     }
+    readTypes.add(new BlobStoreTypeXO(
+        id: "",
+        name: "",
+        customFormName: "",
+        isModifiable: false,
+        isEnabled: true
+    ))
+    return readTypes;
   }
 
   @DirectMethod
@@ -171,8 +202,20 @@ class BlobStoreComponent
   @ExceptionMetered
   @RequiresPermissions('nexus:blobstores:update')
   @Validate(groups = [Update, Default])
-  BlobStoreXO update(final @NotNull @Valid BlobStoreXO blobStore) {
-    return asBlobStoreXO(blobStoreManager.update(asConfiguration(blobStore)))
+  BlobStoreXO update(final @NotNull @Valid BlobStoreXO blobStoreXO) {
+    BlobStore blobStore = blobStoreManager.get(blobStoreXO.name)
+    if (PasswordPlaceholder.is(blobStoreXO?.attributes?.s3?.secretAccessKey)) {
+      //Did not update the password, just use the password we already have
+      blobStoreXO.attributes.s3.secretAccessKey =
+          blobStore.blobStoreConfiguration.attributes?.s3?.secretAccessKey
+    }
+    if (blobStoreXO != null && blobStoreXO.attributes != null && blobStoreXO.attributes["azure cloud storage"] != null &&
+        PasswordPlaceholder.is(blobStoreXO.attributes["azure cloud storage"].accountKey)) {
+      //Did not update the password, just use the password we already have
+      blobStoreXO.attributes["azure cloud storage"].accountKey =
+          blobStore.blobStoreConfiguration.attributes["azure cloud storage"].accountKey
+    }
+    return asBlobStoreXO(blobStoreManager.update(asConfiguration(blobStoreXO)))
   }
 
   @DirectMethod
@@ -183,6 +226,9 @@ class BlobStoreComponent
   void remove(final @NotEmpty String name) {
     if (repositoryManager.isBlobstoreUsed(name)) {
       throw new BlobStoreException("Blob store (${name}) is in use by at least one repository", null)
+    }
+    if (blobstoreInChangeRepoTaskCount(name) > 0) {
+      throw new BlobStoreException("Blob store (${name}) is in use by a Change Repository Blob Store task", null)
     }
     blobStoreManager.delete(name)
   }
@@ -218,13 +264,19 @@ class BlobStoreComponent
     'on'.equalsIgnoreCase(value)  || '1'.equalsIgnoreCase(value))
   }
 
-  BlobStoreXO asBlobStoreXO(final BlobStore blobStore, final Collection<BlobStoreGroup> blobStoreGroups = []) {
+  BlobStoreXO asBlobStoreXO(final BlobStore blobStore, final Collection<BlobStoreGroup> blobStoreGroups = [],
+                            final boolean namesOnly = false)
+  {
     NestedAttributesMap quotaAttributes = blobStore.getBlobStoreConfiguration().attributes(BlobStoreQuotaSupport.ROOT_KEY)
+    if (namesOnly) {
+      return new BlobStoreXO(name: blobStore.blobStoreConfiguration.name)
+    }
     def blobStoreXO = new BlobStoreXO(
         name: blobStore.blobStoreConfiguration.name,
         type: blobStore.blobStoreConfiguration.type,
-        attributes: blobStore.blobStoreConfiguration.attributes,
+        attributes: filterAttributes(blobStore.blobStoreConfiguration.attributes),
         repositoryUseCount: repositoryManager.blobstoreUsageCount(blobStore.blobStoreConfiguration.name),
+        taskUseCount: blobstoreInChangeRepoTaskCount(blobStore.blobStoreConfiguration.name),
         blobStoreUseCount: blobStoreManager.blobStoreUsageCount(blobStore.blobStoreConfiguration.name),
         inUse: repositoryManager.isBlobstoreUsed(blobStore.blobStoreConfiguration.name),
         promotable: blobStoreManager.isPromotable(blobStore.blobStoreConfiguration.name),
@@ -249,6 +301,13 @@ class BlobStoreComponent
     return blobStoreXO
   }
 
+  int blobstoreInChangeRepoTaskCount(final String blobStoreName) {
+    if (changeRepositoryBlobstoreDataService != null) {
+      return changeRepositoryBlobstoreDataService.changeRepoTaskUsingBlobstoreCount(blobStoreName);
+    }
+    return 0;
+  }
+
   @DirectMethod
   @Timed
   @ExceptionMetered
@@ -269,6 +328,18 @@ class BlobStoreComponent
   List<FillPolicyXO> fillPolicies() {
     fillPolicies.collect { id, policy ->
       new FillPolicyXO(id: id, name: policy.name)
+    }
+  }
+
+  Map<String, Map<String, Object>> filterAttributes(Map<String, Map<String, Object>> attributes) {
+    if (attributes?.s3?.secretAccessKey != null) {
+      return [*:attributes, s3: [*:attributes.s3, secretAccessKey: PasswordPlaceholder.get()]]
+    }
+    else if (attributes != null && attributes.get("azure cloud storage") != null) {
+      return [*:attributes, 'azure cloud storage': [*:attributes.'azure cloud storage', accountKey: PasswordPlaceholder.get()]]
+    }
+    else {
+      return attributes
     }
   }
 }

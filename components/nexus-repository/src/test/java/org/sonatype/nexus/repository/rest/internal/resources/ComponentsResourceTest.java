@@ -18,19 +18,20 @@ import java.util.Collections;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.NotFoundException;
 import javax.ws.rs.WebApplicationException;
+import javax.ws.rs.core.MediaType;
 
 import org.sonatype.nexus.common.entity.ContinuationTokenHelper;
 import org.sonatype.nexus.common.entity.DetachedEntityId;
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.common.entity.EntityMetadata;
-import org.sonatype.nexus.repository.browse.BrowseResult;
-import org.sonatype.nexus.repository.browse.QueryOptions;
 import org.sonatype.nexus.repository.maintenance.MaintenanceService;
-import org.sonatype.nexus.repository.rest.ComponentUploadExtension;
-import org.sonatype.nexus.repository.rest.ComponentsResourceExtension;
+import org.sonatype.nexus.repository.query.PageResult;
+import org.sonatype.nexus.repository.query.QueryOptions;
 import org.sonatype.nexus.repository.rest.api.ComponentXO;
 import org.sonatype.nexus.repository.rest.api.ComponentXOFactory;
-import org.sonatype.nexus.repository.rest.internal.api.RepositoryItemIDXO;
+import org.sonatype.nexus.repository.rest.api.RepositoryItemIDXO;
+import org.sonatype.nexus.repository.rest.ComponentUploadExtension;
+import org.sonatype.nexus.repository.rest.cma.ComponentsResourceExtension;
 import org.sonatype.nexus.repository.storage.Asset;
 import org.sonatype.nexus.repository.storage.Component;
 import org.sonatype.nexus.repository.storage.ComponentEntityAdapter;
@@ -99,7 +100,7 @@ public class ComponentsResourceTest
   private EntityId componentOneEntityId;
 
   @Mock
-  private BrowseResult<Asset> componentOneBrowseResults;
+  private PageResult<Asset> componentOneBrowseResults;
 
   @Mock
   private Component componentTwo;
@@ -114,13 +115,13 @@ public class ComponentsResourceTest
   private EntityId componentTwoEntityId;
 
   @Mock
-  private BrowseResult<Asset> componentTwoBrowseResults;
+  private PageResult<Asset> componentTwoBrowseResults;
 
   @Captor
   private ArgumentCaptor<QueryOptions> queryOptionsCaptor;
 
   @Mock
-  private BrowseResult<Component> componentBrowseResult;
+  private PageResult<Component> componentBrowseResult;
 
   @Captor
   private ArgumentCaptor<DetachedEntityId> detachedEntityIdCaptor;
@@ -190,7 +191,7 @@ public class ComponentsResourceTest
 
     underTest = new ComponentsResource(repositoryManagerRESTAdapter, browseService, componentEntityAdapter,
         maintenanceService, continuationTokenHelper, uploadManager, uploadConfiguration,
-        new ComponentXOFactory(emptySet()), ImmutableSet.of(componentsResourceExtension));
+        new ComponentXOFactory(emptySet()), ImmutableSet.of(componentsResourceExtension), null);
   }
 
   @Test
@@ -267,9 +268,11 @@ public class ComponentsResourceTest
     return repositoryItemXOID;
   }
 
+  @SuppressWarnings("java:S2699") // sonar wants assertions, but best to let possible exceptions bubble up
   @Test
   public void uploadComponent() throws Exception {
     HttpServletRequest request = mock(HttpServletRequest.class);
+    when(request.getContentType()).thenReturn(MediaType.MULTIPART_FORM_DATA);
 
     UploadResponse uploadResponse = new UploadResponse(new DetachedEntityId(COMPONENT_ID), emptyList());
     when(uploadManager.handle(mavenReleases, request)).thenReturn(uploadResponse);

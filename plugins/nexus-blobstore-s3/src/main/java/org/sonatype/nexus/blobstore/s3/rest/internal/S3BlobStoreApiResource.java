@@ -14,9 +14,6 @@ package org.sonatype.nexus.blobstore.s3.rest.internal;
 
 import java.util.Optional;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
 import javax.validation.Valid;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
@@ -32,6 +29,7 @@ import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.blobstore.s3.rest.internal.model.S3BlobStoreApiModel;
+import org.sonatype.nexus.rapture.PasswordPlaceholder;
 import org.sonatype.nexus.rest.Resource;
 import org.sonatype.nexus.rest.WebApplicationMessageException;
 
@@ -40,34 +38,26 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import static java.util.Optional.ofNullable;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static javax.ws.rs.core.Response.status;
 import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
 import static javax.ws.rs.core.Response.Status.CREATED;
-import static javax.ws.rs.core.Response.noContent;
-import static javax.ws.rs.core.Response.ok;
-import static javax.ws.rs.core.Response.status;
+import static javax.ws.rs.core.Response.Status.INTERNAL_SERVER_ERROR;
 import static org.apache.commons.lang.StringUtils.equalsIgnoreCase;
+import static org.apache.commons.lang.StringUtils.isNotEmpty;
 import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStore.TYPE;
-import static org.sonatype.nexus.blobstore.s3.rest.internal.S3BlobStoreApiConfigurationMapper.CONFIGURATION_MAPPER;
-import static org.sonatype.nexus.blobstore.s3.rest.internal.S3BlobStoreApiModelMapper.MODEL_MAPPER;
-import static org.sonatype.nexus.blobstore.s3.rest.internal.S3BlobStoreApiResource.RESOURCE_URI;
-import static org.sonatype.nexus.rest.APIConstants.BETA_API_PREFIX;
+import static org.sonatype.nexus.blobstore.s3.rest.internal.S3BlobStoreApiModelMapper.map;
 
 /**
  * REST API endpoints for creating, reading, updating and deleting an S3 blob store.
  *
  * @since 3.20
  */
-@Named
-@Singleton
-@Path(RESOURCE_URI)
 @Produces(APPLICATION_JSON)
 @Consumes(APPLICATION_JSON)
 public class S3BlobStoreApiResource
     extends ComponentSupport
     implements Resource, S3BlobStoreApiResourceDoc
 {
-  static final String RESOURCE_URI = BETA_API_PREFIX + "/blobstores/s3";
-
   private static final String UNKNOWN_BLOB_STORE_MSG_FORMAT = "\"Blob store %s doesn't exist.\"";
 
   private static final String NOT_AN_S3_BLOB_STORE_MSG_FORMAT = "\"%s is not an S3 blob store.\"";
@@ -76,7 +66,6 @@ public class S3BlobStoreApiResource
 
   private final BlobStoreManager blobStoreManager;
 
-  @Inject
   public S3BlobStoreApiResource(
       final BlobStoreManager blobStoreManager,
       final S3BlobStoreApiUpdateValidation validation)
@@ -89,10 +78,15 @@ public class S3BlobStoreApiResource
   @Override
   @RequiresAuthentication
   @RequiresPermissions("nexus:blobstores:create")
-  public Response createBlobStore(@Valid final S3BlobStoreApiModel request) throws Exception {
-    final BlobStoreConfiguration blobStoreConfiguration = MODEL_MAPPER.apply(blobStoreManager.newConfiguration(), request);
-    blobStoreManager.create(blobStoreConfiguration);
-    return status(CREATED).build();
+  public Response createBlobStore(@Valid final S3BlobStoreApiModel request) {
+    try {
+      final BlobStoreConfiguration blobStoreConfiguration = map(blobStoreManager.newConfiguration(), request);
+      blobStoreManager.create(blobStoreConfiguration);
+      return status(CREATED).build();
+    }
+    catch (Exception e) {
+      throw new WebApplicationMessageException(INTERNAL_SERVER_ERROR, e.getMessage());
+    }
   }
 
   @PUT
@@ -100,14 +94,31 @@ public class S3BlobStoreApiResource
   @RequiresAuthentication
   @Path("/{name}")
   @RequiresPermissions("nexus:blobstores:update")
-  public Response updateBlobStore(
+  public void updateBlobStore(
       @Valid final S3BlobStoreApiModel request,
       @PathParam("name") final String blobStoreName) throws Exception
   {
     s3BlobStoreApiUpdateValidation.validateUpdateRequest(request, blobStoreName);
-    final BlobStoreConfiguration blobStoreConfiguration = MODEL_MAPPER.apply(blobStoreManager.newConfiguration(), request);
-    blobStoreManager.update(blobStoreConfiguration);
-    return noContent().build();
+
+    if (isPasswordUntouched(request)) {
+      //Did not update the password, just use the password we already have
+      BlobStore currentS3Blobstore = blobStoreManager.get(blobStoreName);
+      request.getBucketConfiguration().getBucketSecurity().setSecretAccessKey(
+          currentS3Blobstore.getBlobStoreConfiguration().getAttributes().get("s3").get("secretAccessKey").toString());
+    }
+
+    try {
+      final BlobStoreConfiguration blobStoreConfiguration = map(blobStoreManager.newConfiguration(), request);
+      blobStoreManager.update(blobStoreConfiguration);
+    }
+    catch (Exception e) {
+      throw new WebApplicationMessageException(INTERNAL_SERVER_ERROR, e.getMessage());
+    }
+  }
+
+  private boolean isPasswordUntouched(final S3BlobStoreApiModel request) {
+    return request.getBucketConfiguration() != null && request.getBucketConfiguration().getBucketSecurity() != null &&
+        PasswordPlaceholder.is(request.getBucketConfiguration().getBucketSecurity().getSecretAccessKey());
   }
 
   @GET
@@ -115,21 +126,30 @@ public class S3BlobStoreApiResource
   @RequiresAuthentication
   @Path("/{name}")
   @RequiresPermissions("nexus:blobstores:read")
-  public Response getBlobStore(@PathParam("name") final String blobStoreName) {
+  public S3BlobStoreApiModel getBlobStore(@PathParam("name") final String blobStoreName) {
     return fetchBlobStoreConfiguration(blobStoreName)
-        .map(model -> ok().entity(model).build())
         .orElseThrow(() -> new WebApplicationMessageException(BAD_REQUEST,
             String.format(UNKNOWN_BLOB_STORE_MSG_FORMAT, blobStoreName), APPLICATION_JSON));
   }
 
   private Optional<S3BlobStoreApiModel> fetchBlobStoreConfiguration(final String blobStoreName) {
-    return ofNullable(blobStoreManager.get(blobStoreName))
+    Optional<S3BlobStoreApiModel> result = ofNullable(blobStoreManager.get(blobStoreName))
         .map(BlobStore::getBlobStoreConfiguration)
         .map(this::ensureBlobStoreTypeIsS3)
-        .map(CONFIGURATION_MAPPER);
+        .map(S3BlobStoreApiConfigurationMapper::map);
+    if (result.isPresent() && isAuthenticationDataPresent(result.get())) {
+      result.get().getBucketConfiguration().getBucketSecurity().setSecretAccessKey(PasswordPlaceholder.get());
+    }
+    return result;
   }
 
-  private BlobStoreConfiguration ensureBlobStoreTypeIsS3(BlobStoreConfiguration configuration) {
+  private boolean isAuthenticationDataPresent(final S3BlobStoreApiModel s3BlobStoreApiModel) {
+    return s3BlobStoreApiModel.getBucketConfiguration().getBucketSecurity() != null &&
+        s3BlobStoreApiModel.getBucketConfiguration().getBucketSecurity().getAccessKeyId() != null &&
+        isNotEmpty(s3BlobStoreApiModel.getBucketConfiguration().getBucketSecurity().getAccessKeyId());
+  }
+
+  private BlobStoreConfiguration ensureBlobStoreTypeIsS3(final BlobStoreConfiguration configuration) {
     final String type = configuration.getType();
     if (!equalsIgnoreCase(TYPE, type)) {
       throw new WebApplicationMessageException(BAD_REQUEST,

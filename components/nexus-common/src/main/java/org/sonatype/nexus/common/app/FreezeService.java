@@ -20,7 +20,7 @@ import static java.util.UUID.randomUUID;
 /**
  * Supports freezing the application, making it read-only.
  *
- * @since 3.next
+ * @since 3.21
  */
 public interface FreezeService
 {
@@ -114,6 +114,15 @@ public interface FreezeService
    * @return Is the application currently frozen?
    */
   boolean isFrozen();
+
+  /**
+   * @return Is the application frozen by user request?
+   *
+   * @since 3.24
+   */
+  default boolean isFrozenByUser() {
+    return currentFreezeRequests().stream().anyMatch(FreezeRequest::isUserRequest);
+  }
 
   /**
    * @return The currently active freeze requests, if any exist

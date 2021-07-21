@@ -26,6 +26,10 @@ import org.sonatype.nexus.common.log.DryRunPrefix
 import com.amazonaws.SdkClientException
 import com.amazonaws.services.s3.AmazonS3
 import com.amazonaws.services.s3.model.AmazonS3Exception
+import com.amazonaws.services.s3.model.DeleteObjectsRequest
+import com.amazonaws.services.s3.model.DeleteObjectsResult
+import com.amazonaws.services.s3.model.DeleteObjectsResult.DeletedObject
+import com.amazonaws.services.s3.model.ListObjectsRequest
 import com.amazonaws.services.s3.model.ObjectListing
 import com.amazonaws.services.s3.model.S3Object
 import com.amazonaws.services.s3.model.S3ObjectInputStream
@@ -33,8 +37,8 @@ import com.amazonaws.services.s3.model.S3ObjectSummary
 import spock.lang.Specification
 import spock.lang.Unroll
 
-import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStore.BLOB_ATTRIBUTE_SUFFIX
-import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStore.BLOB_CONTENT_SUFFIX
+import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_FILE_ATTRIBUTES_SUFFIX
+import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_FILE_CONTENT_SUFFIX
 
 /**
  * {@link S3BlobStore} tests.
@@ -59,8 +63,8 @@ class S3BlobStoreTest
 
   AmazonS3 s3 = Mock()
 
-  S3BlobStore blobStore = new S3BlobStore(amazonS3Factory, locationResolver, uploader, copier, storeMetrics,
-      dryRunPrefix, bucketManager)
+  S3BlobStore blobStore = new S3BlobStore(amazonS3Factory, locationResolver, uploader, copier, false, false, false,
+      storeMetrics, dryRunPrefix, bucketManager)
 
   def config = new MockBlobStoreConfiguration()
 
@@ -111,6 +115,45 @@ class S3BlobStoreTest
       ''         | 'content/'
       null       | 'content/'
 
+  }
+
+  def 'getBlobIdUpdatedSinceStream filters out of date content'() {
+    given: 'setup blobstore'
+      blobStore.init(config)
+      blobStore.doStart()
+
+      s3.listObjects(_ as ListObjectsRequest) >> { listObjectsRequest ->
+
+        def listing = new ObjectListing()
+        listing.objectSummaries << new S3ObjectSummary(bucketName: 'mybucket', key: '/content/tmp/vol-01/chap-01/12345678-1234-1234-1234-123456789ghi.properties', lastModified: new Date())
+        listing.objectSummaries << new S3ObjectSummary(bucketName: 'mybucket', key: '/content/tmp/vol-01/chap-01/12345678-1234-1234-1234-123456789ghi.bytes', lastModified: new Date())
+        listing.objectSummaries << new S3ObjectSummary(bucketName: 'mybucket', key: 'vol-01/chap-01/12345678-1234-1234-1234-123456789abc.properties', lastModified: new Date())
+        listing.objectSummaries << new S3ObjectSummary(bucketName: 'mybucket', key: 'vol-01/chap-01/12345678-1234-1234-1234-123456789abc.bytes', lastModified: new Date())
+        listing.objectSummaries << new S3ObjectSummary(bucketName: 'mybucket', key: 'vol-01/chap-01/12345678-1234-1234-1234-123456789def.properties', lastModified: new Date().minus(2))
+        listing.objectSummaries << new S3ObjectSummary(bucketName: 'mybucket', key: 'vol-01/chap-01/12345678-1234-1234-1234-123456789def.bytes', lastModified: new Date().minus(2))
+        listing.truncated = false
+
+        return listing
+      }
+
+    when: 'blob id stream is fetched only wanting blobs updated in the last day'
+      List<BlobId> blobIds = blobStore.getBlobIdUpdatedSinceStream(1).collect(Collectors.toList())
+
+    then: 'only the blob updated in the last day will be returned'
+      blobIds.size() == 1
+      blobIds.get(0).asUniqueString() == "12345678-1234-1234-1234-123456789abc"
+  }
+
+  def 'getBlobIdUpdatedSinceStream throws exception if negative sinceDays is passed in'() {
+    given: 'setup blobstore'
+      blobStore.init(config)
+      blobStore.doStart()
+
+    when: 'blob id stream is fetched'
+      blobStore.getBlobIdUpdatedSinceStream(-1)
+
+    then: 'fails'
+      thrown(IllegalArgumentException.class)
   }
 
   @Unroll
@@ -164,11 +207,11 @@ class S3BlobStoreTest
     then: 'deleted tag is added'
       deleted == true
       1 * s3.setObjectTagging(_) >> { args ->
-        assert args[0].getKey().endsWith(BLOB_CONTENT_SUFFIX) == true
+        assert args[0].getKey().endsWith(BLOB_FILE_CONTENT_SUFFIX) == true
         assert args[0].getTagging().getTagSet() == [S3BlobStore.DELETED_TAG]
       }
       1 * s3.setObjectTagging(_) >> { args ->
-        assert args[0].getKey().endsWith(BLOB_ATTRIBUTE_SUFFIX) == true
+        assert args[0].getKey().endsWith(BLOB_FILE_ATTRIBUTES_SUFFIX) == true
         assert args[0].getTagging().getTagSet() == [S3BlobStore.DELETED_TAG]
       }
 
@@ -202,6 +245,9 @@ class S3BlobStoreTest
       _ * s3.doesObjectExist('mybucket', propertiesLocation(blobId)) >> true
       _ * s3.getObject('mybucket', propertiesLocation(blobId)) >> attributesS3Object
 
+      def deleteObjectsResult = Mock(DeleteObjectsResult.class)
+      _ * deleteObjectsResult.getDeletedObjects() >> [Mock(DeletedObject.class), Mock(DeletedObject.class)]
+
     when: 'blob is deleted with given lifecycle expiry days'
       cfg.attributes('s3').set('expiration', expiryDays)
       blobStore.init(cfg)
@@ -209,13 +255,13 @@ class S3BlobStoreTest
       blobStore.delete(blobId, 'just a test')
 
     then: 'blob is tagged or deleted correctly'
-      deletions * s3.deleteObject('mybucket', _)
+      deletions * s3.deleteObjects(_ as DeleteObjectsRequest) >> deleteObjectsResult
       tags * s3.setObjectTagging(_)
 
     where:
       expiryDays || deletions | tags
       -1         || 0         | 2
-      0          || 2         | 0
+      0          || 1         | 0
       1          || 0         | 2
       2          || 0         | 2
   }
@@ -249,11 +295,11 @@ class S3BlobStoreTest
       1 * blobAttributes.setDeleted(false)
       1 * blobAttributes.setDeletedReason(null)
       1 * s3.setObjectTagging(_) >> { args ->
-        assert args[0].getKey().endsWith(BLOB_CONTENT_SUFFIX) == true
+        assert args[0].getKey().endsWith(BLOB_FILE_CONTENT_SUFFIX) == true
         assert args[0].getTagging().getTagSet().isEmpty()
       }
       1 * s3.setObjectTagging(_) >> { args ->
-        assert args[0].getKey().endsWith(BLOB_ATTRIBUTE_SUFFIX) == true
+        assert args[0].getKey().endsWith(BLOB_FILE_ATTRIBUTES_SUFFIX) == true
         assert args[0].getTagging().getTagSet().isEmpty()
       }
   }
@@ -410,6 +456,101 @@ class S3BlobStoreTest
       false                | { throw new SdkClientException("Fake error") }
   }
 
+  def "expiry test"(){
+    given: 'blob exists'
+      def expiryPreferredBlobStore = new S3BlobStore(amazonS3Factory, locationResolver, uploader, copier, true, false, false,
+          storeMetrics, dryRunPrefix, bucketManager)
+
+      def blobId = new BlobId('soft-delete-success')
+      def cfg = new MockBlobStoreConfiguration()
+      cfg.attributes = [s3: [bucket: 'mybucket', prefix: prefix]]
+      def pathPrefix = prefix ? (prefix + "/") : ""
+
+      expiryPreferredBlobStore.init(cfg)
+      expiryPreferredBlobStore.doStart()
+      def attributesS3Object = mockS3Object(attributesContents)
+      2 * s3.doesObjectExist('mybucket', pathPrefix + propertiesLocation(blobId)) >> true
+      2 * s3.getObject('mybucket', pathPrefix + propertiesLocation(blobId)) >> attributesS3Object
+
+    when: 'blob is deleted'
+      def deleted = expiryPreferredBlobStore.deleteHard(blobId)
+
+    then: 'the delete is not actual called'
+      deleted
+      0 * s3.deleteObject(_ as String, _ as String)
+
+    where:
+      prefix   | _
+      null     | _
+      ""       | _
+      "prefix" | _
+  }
+
+  def "hard delete hard deletes when prefered"(){
+    given: 'blob exists'
+      def hardDeleteStore = new S3BlobStore(amazonS3Factory, locationResolver, uploader, copier, true, true, false,
+          storeMetrics, dryRunPrefix, bucketManager)
+
+      def blobId = new BlobId('soft-delete-success')
+      def cfg = new MockBlobStoreConfiguration()
+      cfg.attributes = [s3: [bucket: 'mybucket', prefix: prefix]]
+      def pathPrefix = prefix ? (prefix + "/") : ""
+
+      def deleteObjectsResult = Mock(DeleteObjectsResult.class)
+      _ * deleteObjectsResult.getDeletedObjects() >> [Mock(DeletedObject.class), Mock(DeletedObject.class)]
+
+      hardDeleteStore.init(cfg)
+      hardDeleteStore.doStart()
+      def attributesS3Object = mockS3Object(attributesContents)
+      1 * s3.doesObjectExist('mybucket', pathPrefix + propertiesLocation(blobId)) >> true
+      1 * s3.getObject('mybucket', pathPrefix + propertiesLocation(blobId)) >> attributesS3Object
+
+    when: 'blob is deleted'
+      def deleted = hardDeleteStore.deleteHard(blobId)
+
+    then: 'the blob and props are really deleted'
+      deleted
+      1 * s3.deleteObjects(_ as DeleteObjectsRequest) >> deleteObjectsResult
+
+    where:
+      prefix   | _
+      null     | _
+      ""       | _
+      "prefix" | _
+  }
+
+  def "regular delete hard deletes when prefered"(){
+    given: 'blob exists'
+      def hardDeleteStore = new S3BlobStore(amazonS3Factory, locationResolver, uploader, copier, true, true, false,
+          storeMetrics, dryRunPrefix, bucketManager)
+
+      def blobId = new BlobId('soft-delete-success')
+      def cfg = new MockBlobStoreConfiguration()
+      cfg.attributes = [s3: [bucket: 'mybucket', prefix: prefix]]
+      def pathPrefix = prefix ? (prefix + "/") : ""
+
+      def deleteObjectsResult = Mock(DeleteObjectsResult.class)
+      _ * deleteObjectsResult.getDeletedObjects() >> [Mock(DeletedObject.class), Mock(DeletedObject.class)]
+
+      hardDeleteStore.init(cfg)
+      hardDeleteStore.doStart()
+      def attributesS3Object = mockS3Object(attributesContents)
+      1 * s3.doesObjectExist('mybucket', pathPrefix + propertiesLocation(blobId)) >> true
+      1 * s3.getObject('mybucket', pathPrefix + propertiesLocation(blobId)) >> attributesS3Object
+
+    when: 'blob is deleted'
+      def deleted = hardDeleteStore.delete(blobId, "testDelete")
+
+    then: 'the blob and props are really deleted'
+      deleted
+      1 * s3.deleteObjects(_ as DeleteObjectsRequest) >> deleteObjectsResult
+
+    where:
+      prefix   | _
+      null     | _
+      ""       | _
+      "prefix" | _
+  }
   private mockS3Object(String contents) {
     S3Object s3Object = Mock()
     s3Object.getObjectContent() >> new S3ObjectInputStream(new ByteArrayInputStream(contents.bytes), null)

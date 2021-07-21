@@ -13,8 +13,9 @@
 package org.sonatype.nexus.repository.browse.internal;
 
 import java.lang.reflect.Method;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Optional;
 
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.common.entity.EntityHelper;
@@ -22,12 +23,14 @@ import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.orient.HexRecordIdObfuscator;
 import org.sonatype.nexus.orient.testsupport.DatabaseInstanceRule;
 import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.browse.BrowseNodeConfiguration;
 import org.sonatype.nexus.repository.browse.BrowseTestSupport;
+import org.sonatype.nexus.repository.browse.internal.orient.BrowseNodeEntityAdapter;
+import org.sonatype.nexus.repository.browse.node.BrowseNodeConfiguration;
+import org.sonatype.nexus.repository.browse.node.RebuildBrowseNodesTaskDescriptor;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
+import org.sonatype.nexus.repository.ossindex.PackageUrlService;
 import org.sonatype.nexus.repository.storage.Asset;
 import org.sonatype.nexus.repository.storage.AssetEntityAdapter;
-import org.sonatype.nexus.repository.storage.BrowseNodeEntityAdapter;
 import org.sonatype.nexus.repository.storage.Bucket;
 import org.sonatype.nexus.repository.storage.BucketEntityAdapter;
 import org.sonatype.nexus.repository.storage.ComponentEntityAdapter;
@@ -49,18 +52,22 @@ import static java.util.Collections.emptySet;
 import static java.util.Collections.singletonList;
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
-import static org.sonatype.nexus.repository.browse.internal.RebuildBrowseNodesTaskDescriptor.REPOSITORY_NAME_FIELD_ID;
+import static org.sonatype.nexus.repository.browse.node.RebuildBrowseNodesTaskDescriptor.REPOSITORY_NAME_FIELD_ID;
 import static org.sonatype.nexus.repository.storage.BucketEntityAdapter.P_PENDING_DELETION;
 
 public class RebuildBrowseNodesManagerTest
     extends BrowseTestSupport
 {
   private static final String REPOSITORY_NAME = "repo";
+
+  private static final String REPOSITORY2_NAME = "repo2";
+
   @Rule
   public DatabaseInstanceRule databaseInstanceRule = DatabaseInstanceRule.inMemory("test");
 
@@ -74,6 +81,8 @@ public class RebuildBrowseNodesManagerTest
 
   private Bucket bucket;
 
+  private Bucket bucket2;
+
   private BrowseNodeEntityAdapter browseNodeEntityAdapter;
 
   @Mock
@@ -84,6 +93,9 @@ public class RebuildBrowseNodesManagerTest
 
   @Mock
   private Repository repository;
+
+  @Mock
+  private Repository repository2;
 
   @Mock
   private TaskSchedulerImpl taskScheduler;
@@ -103,24 +115,32 @@ public class RebuildBrowseNodesManagerTest
   @Mock
   private BrowseNodeConfiguration configuration;
 
+  @Mock
+  private PackageUrlService packageUrlService;
+
   @Before
   public void configure() throws Exception {
     when(configuration.isAutomaticRebuildEnabled()).thenReturn(true);
-    when(repositoryManager.browse()).thenReturn(Collections.singleton(repository));
+    when(repositoryManager.browse()).thenReturn(Arrays.asList(repository, repository2));
     when(repository.getName()).thenReturn(REPOSITORY_NAME);
+    when(repository2.getName()).thenReturn(REPOSITORY2_NAME);
 
     initializeDatabase();
 
     bucket = createBucket(REPOSITORY_NAME);
+    bucket2 = createBucket(REPOSITORY2_NAME);
 
     bucketEntityAdapter.addEntity(databaseInstanceRule.getInstance().acquire(), bucket);
+    bucketEntityAdapter.addEntity(databaseInstanceRule.getInstance().acquire(), bucket2);
   }
 
   private void initializeDatabase() throws Exception {
     bucketEntityAdapter = new BucketEntityAdapter();
     componentEntityAdapter = new ComponentEntityAdapter(bucketEntityAdapter, componentFactory, emptySet());
     assetEntityAdapter = new AssetEntityAdapter(bucketEntityAdapter, componentEntityAdapter);
-    browseNodeEntityAdapter = new BrowseNodeEntityAdapter(componentEntityAdapter, assetEntityAdapter);
+    when(packageUrlService.getPackageUrl(anyString(), anyString(), anyString(), anyString()))
+        .thenReturn(Optional.empty());
+    browseNodeEntityAdapter = new BrowseNodeEntityAdapter(componentEntityAdapter, assetEntityAdapter, packageUrlService);
     underTest = new RebuildBrowseNodesManager(databaseInstanceRule.getInstanceProvider(), taskScheduler, configuration,
         bucketEntityAdapter);
 
@@ -224,6 +244,26 @@ public class RebuildBrowseNodesManagerTest
 
     underTest.doStart();
     assertThat(taskConfiguration.getString(REPOSITORY_NAME_FIELD_ID), is(REPOSITORY_NAME));
+    verify(taskScheduler).createTaskConfigurationInstance(RebuildBrowseNodesTaskDescriptor.TYPE_ID);
+    verify(taskScheduler).submit(taskConfiguration);
+  }
+
+  @Test
+  public void doStartIncludesMultipleRepositories() throws Exception {
+    TaskConfiguration taskConfiguration = new TaskConfiguration();
+    Asset asset = createAsset("asset", "maven2", bucket);
+    Asset asset2 = createAsset("asset", "maven2", bucket2);
+
+    try (ODatabaseDocumentTx db = databaseInstanceRule.getInstance().acquire()) {
+      assetEntityAdapter.addEntity(db, asset);
+      assetEntityAdapter.addEntity(db, asset2);
+    }
+
+    when(taskScheduler.createTaskConfigurationInstance(RebuildBrowseNodesTaskDescriptor.TYPE_ID))
+        .thenReturn(taskConfiguration);
+
+    underTest.doStart();
+    assertThat(taskConfiguration.getString(REPOSITORY_NAME_FIELD_ID), is(REPOSITORY_NAME + "," + REPOSITORY2_NAME));
     verify(taskScheduler).createTaskConfigurationInstance(RebuildBrowseNodesTaskDescriptor.TYPE_ID);
     verify(taskScheduler).submit(taskConfiguration);
   }

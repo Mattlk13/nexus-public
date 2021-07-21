@@ -193,15 +193,15 @@ class DataStoreManagerImplTest
   }
 
   @Test
-  void 'Data stores are started/shutdown when manager starts/shutsdown'() {
+  void 'Data stores are started or shutdown when manager starts or shutsdown'() {
 
     def testStore = underTest.get('test')
     def exampleStore = underTest.get('example')
 
     underTest.stop()
 
-    assert testStore.empty()
-    assert exampleStore.empty()
+    assert !testStore.isPresent()
+    assert !exampleStore.isPresent()
 
     def testConfig = newDataStoreConfiguration('test')
     def exampleConfig = newDataStoreConfiguration('example')
@@ -230,7 +230,7 @@ class DataStoreManagerImplTest
     exampleStore = underTest.get('example')
     underTest.stop()
 
-    assert testStore.empty()
+    assert !testStore.isPresent()
 
     verify(exampleStore.get(), times(1)).start()
     verify(configurationManager, times(2)).save(exampleConfig)
@@ -244,8 +244,8 @@ class DataStoreManagerImplTest
     exampleStore = underTest.get('example')
     underTest.stop()
 
-    assert testStore.empty()
-    assert exampleStore.empty()
+    assert !testStore.isPresent()
+    assert !exampleStore.isPresent()
   }
 
   @Test
@@ -339,10 +339,5 @@ class DataStoreManagerImplTest
     expected.verify(store, times(1)).start()
 
     expected.verifyNoMoreInteractions()
-  }
-
-  @Test
-  void 'Restoring databases attempted'() {
-    verify(restorer).maybeRestore()
   }
 }

@@ -12,14 +12,19 @@
  */
 package org.sonatype.nexus.repository.storage;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import javax.annotation.Nullable;
 
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
+import org.sonatype.nexus.common.entity.Continuation;
+import org.sonatype.nexus.common.entity.Continuations;
+import org.sonatype.nexus.common.entity.DetachedEntityId;
 import org.sonatype.nexus.common.entity.EntityHelper;
 import org.sonatype.nexus.orient.entity.AttachedEntityId;
 import org.sonatype.nexus.orient.entity.IterableEntityAdapter;
@@ -38,6 +43,7 @@ import org.joda.time.DateTime;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.Iterables.isEmpty;
+import static org.apache.commons.lang3.StringUtils.containsIgnoreCase;
 import static org.sonatype.nexus.common.text.Strings2.isBlank;
 
 /**
@@ -76,6 +82,17 @@ public abstract class MetadataNodeEntityAdapter<T extends MetadataNode<?>>
    * @see MetadataNodeEntityAdapter#writeFields(ODocument, MetadataNode)
    */
   static final String P_LAST_UPDATED = "last_updated";
+
+
+  private static final String RID = "rid";
+
+  /**
+   * According to the Orient documentation #-1:-1 is a begin id
+   * So this is the start point for fetching the data.
+   */
+  private static final String START_RID = "#-1:-1";
+
+  private static final String SKIP_AS_QUERY_IS_EMPTY = "Skipped finding {}s as query is empty, parameters: {}";
 
   protected final BucketEntityAdapter bucketEntityAdapter;
 
@@ -179,6 +196,17 @@ public abstract class MetadataNodeEntityAdapter<T extends MetadataNode<?>>
     return browseByQuery(db, whereClause, parameters, buckets, querySuffix, true);
   }
 
+  Iterable<T> browseByQueryAsync(final ODatabaseDocumentTx db,
+                                 @Nullable final String whereClause,
+                                 @Nullable final Map<String, Object> parameters,
+                                 @Nullable final Iterable<Bucket> buckets,
+                                 @Nullable final String querySuffix,
+                                 final int bufferSize,
+                                 final int bufferTimeoutSeconds)
+  {
+    return browseByQuery(db, whereClause, parameters, buckets, querySuffix, true, bufferSize, bufferTimeoutSeconds);
+  }
+
   private Iterable<T> browseByQuery(final ODatabaseDocumentTx db,
                                     @Nullable final String whereClause,
                                     @Nullable final Map<String, Object> parameters,
@@ -189,14 +217,76 @@ public abstract class MetadataNodeEntityAdapter<T extends MetadataNode<?>>
     String query = buildQuery(false, whereClause, buckets, querySuffix);
 
     if (isBlank(query)) {
-      log.debug("Skipped finding {}s as query is empty, parameters: {}", getTypeName(), parameters);
+      log.debug(SKIP_AS_QUERY_IS_EMPTY, getTypeName(), parameters);
       return Collections.emptyList();
     }
 
     log.debug("Finding {}s with query: {}, parameters: {}", getTypeName(), query, parameters);
-    
+
     if (async) {
       return transform(OrientAsyncHelper.asyncIterable(db, query, parameters));
+    }
+    else {
+      Iterable<ODocument> docs = db.command(new OCommandSQL(query)).execute(parameters);
+      return transform(docs);
+    }
+  }
+
+  Iterable<T> browseAllPartiallyByLimit(final ODatabaseDocumentTx db,
+                                        @Nullable final String whereClause,
+                                        @Nullable final Map<String, Object> parameters,
+                                        @Nullable final Iterable<Bucket> buckets)
+  {
+    if (parameters != null && parameters.containsKey(RID)) {
+      throw new IllegalArgumentException("Using '" + RID + "' is unsupported.");
+    }
+
+    Map<String, Object> queryParams = new HashMap<>();
+    if (parameters != null) {
+      queryParams.putAll(parameters);
+    }
+
+    String querySuffix = " and @rid > :rid order by @rid LIMIT " + Continuations.BROWSE_LIMIT;
+    String query = buildQuery(false, whereClause, buckets, querySuffix);
+
+    if (isBlank(query)) {
+      log.debug(SKIP_AS_QUERY_IS_EMPTY, getTypeName(), parameters);
+      return Collections.emptySet();
+    }
+
+    return Continuations.iterableOf((limit, token) -> {
+      log.debug("Finding {}s with query: {}, parameters: {}", getTypeName(), query, parameters);
+      String rid = token == null ? START_RID : recordIdentity(new DetachedEntityId(token)).toString();
+      queryParams.put(RID, rid);
+      Iterable<T> docs = transform(db.command(new OCommandSQL(query)).execute(queryParams));
+
+      Continuation<T> continuation = new ContinuationArrayList<>();
+      docs.forEach(continuation::add);
+
+      return continuation;
+    });
+  }
+
+  private Iterable<T> browseByQuery(final ODatabaseDocumentTx db,
+                                    @Nullable final String whereClause,
+                                    @Nullable final Map<String, Object> parameters,
+                                    @Nullable final Iterable<Bucket> buckets,
+                                    @Nullable final String querySuffix,
+                                    final boolean async,
+                                    final int bufferSize,
+                                    final int bufferTimeoutSeconds)
+  {
+    String query = buildQuery(false, whereClause, buckets, querySuffix);
+
+    if (isBlank(query)) {
+      log.debug(SKIP_AS_QUERY_IS_EMPTY, getTypeName(), parameters);
+      return Collections.emptyList();
+    }
+
+    log.debug("Finding {}s with query: {}, parameters: {}", getTypeName(), query, parameters);
+
+    if (async) {
+      return transform(OrientAsyncHelper.asyncIterable(db, query, parameters, bufferSize, bufferTimeoutSeconds));
     }
     else {
       Iterable<ODocument> docs = db.command(new OCommandSQL(query)).execute(parameters);
@@ -218,6 +308,29 @@ public abstract class MetadataNodeEntityAdapter<T extends MetadataNode<?>>
     }
 
     log.debug("Counting {}s with query: {}, parameters: {}", getTypeName(), query, parameters);
+    List<ODocument> results = db.command(new OCommandSQL(query)).execute(parameters);
+    return results.get(0).field("count");
+  }
+
+  long countGroupByQuery(final ODatabaseDocumentTx db,
+                         @Nullable final String whereClause,
+                         @Nullable final Map<String, Object> parameters,
+                         @Nullable final Iterable<Bucket> buckets,
+                         final String querySuffix)
+  {
+    checkNotNull(querySuffix);
+    checkState(containsIgnoreCase(querySuffix, "group by"));
+
+    String query = buildQuery(true, whereClause, buckets, querySuffix);
+
+    if (isBlank(query)) {
+      log.debug("Skipped counting {}s as query is empty, parameters: {}", getTypeName(), parameters);
+      return 0;
+    }
+
+    query = "select count(*) from (" + buildQuery(true, whereClause, buckets, querySuffix) + ")";
+
+    log.debug("Counting {}s with grouped by query: {}, parameters: {}", getTypeName(), query, parameters);
     List<ODocument> results = db.command(new OCommandSQL(query)).execute(parameters);
     return results.get(0).field("count");
   }
@@ -272,6 +385,19 @@ public abstract class MetadataNodeEntityAdapter<T extends MetadataNode<?>>
               String.format("%s=%s", P_BUCKET, bucketEntityAdapter.recordIdentity(bucket).toString())
           ));
       query.append(')');
+    }
+  }
+
+  private static class ContinuationArrayList<T extends MetadataNode<?>>
+      extends ArrayList<T>
+      implements Continuation<T>
+  {
+    private static final long serialVersionUID = -8278643802740770499L;
+
+    @Override
+    public String nextContinuationToken() {
+      checkState(!isEmpty(), "No more results");
+      return EntityHelper.id(get(size() - 1)).getValue();
     }
   }
 }

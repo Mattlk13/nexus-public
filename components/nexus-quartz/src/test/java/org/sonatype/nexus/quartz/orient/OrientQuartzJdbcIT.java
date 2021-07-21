@@ -45,13 +45,13 @@ import org.quartz.utils.DBConnectionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.jayway.awaitility.Awaitility.await;
+import static org.awaitility.Awaitility.await;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.collection.IsEmptyCollection.empty;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.quartz.JobBuilder.newJob;
 import static org.quartz.TriggerBuilder.newTrigger;
 
@@ -101,6 +101,7 @@ public class OrientQuartzJdbcIT {
     scheduler.shutdown();
   }
 
+  @SuppressWarnings("java:S2699") // sonar doesn't detect awaitility assertions https://jira.sonarsource.com/browse/SONARJAVA-3334
   @Test
   public void test() throws Exception {
     MyJobListener listener = new MyJobListener("foobar");

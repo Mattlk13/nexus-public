@@ -14,13 +14,15 @@ package org.sonatype.nexus.repository.browse;
 
 import java.util.List;
 
+import org.sonatype.nexus.repository.query.PageResult;
+import org.sonatype.nexus.repository.query.QueryOptions;
 import org.sonatype.nexus.repository.storage.Component;
 
 import com.google.common.collect.Lists;
 import org.junit.Test;
 
 import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.mock;
 
 public class BrowseResultTest
@@ -57,7 +59,7 @@ public class BrowseResultTest
 
   private void runTest(final Integer start, final Integer limit, final long expected) {
     QueryOptions queryOptions = new QueryOptions(null, null, null, start, limit, null);
-    BrowseResult<Component> result = new BrowseResult<>(queryOptions, components);
+    PageResult<Component> result = new PageResult<>(queryOptions, components);
     assertThat(result.getTotal(), equalTo(expected));
   }
 }

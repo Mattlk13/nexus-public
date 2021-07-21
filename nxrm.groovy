@@ -29,6 +29,10 @@
 @Grab(group = 'commons-io', module = 'commons-io', version = '2.6')
 @Grab(group = 'org.apache.maven', module = 'maven-model', version = '3.5.0')
 @Grab(group = 'org.rauschig', module = 'jarchivelib', version = '0.7.1')
+@Grab(group = 'com.google.guava', module = 'guava', version = '25.0-jre')
+
+import java.nio.file.Paths
+import java.time.ZonedDateTime
 
 import com.caseyscarborough.colorizer.Colorizer
 import org.ajoberstar.grgit.*
@@ -40,11 +44,13 @@ import org.apache.maven.model.io.xpp3.MavenXpp3Reader
 import org.rauschig.jarchivelib.ArchiveFormat
 import org.rauschig.jarchivelib.ArchiverFactory
 import ch.qos.logback.classic.Logger
-import ch.qos.logback.classic.Logger
+import com.google.common.base.Stopwatch
 import java.nio.charset.StandardCharsets
 
 import static ch.qos.logback.classic.Level.*
 import static com.aestasit.infrastructure.ssh.DefaultSsh.*
+import static java.time.ZoneId.systemDefault
+import static java.time.format.DateTimeFormatter.ofPattern
 import static org.slf4j.Logger.ROOT_LOGGER_NAME as ROOT
 import static org.slf4j.LoggerFactory.getLogger
 
@@ -70,7 +76,7 @@ positionalOptions = null
 buildLog = new File("build.log")
 
 // test projects - generated with command: for i in `find -name pom.xml`; do cd `dirname $i`; xmllint --xpath "//*[local-name()='project']/*[local-name()='artifactId']/text()" pom.xml; cd -; done 
-testProjects = [':nexus-insight-testsupport', ':nexus-docker-testsupport', ':nexuspro-migration-testsuite', ':nexus-testlm-edition', ':nexus-stress-master-instance', ':nexuspro-testsuite', ':nexus-testsuite-data', ':testplugin', ':simple-it', ':nexuspro-fabric-testsuite', ':nexus-fabric-testsupport', ':functional-testsuite', ':pax-exam-spock', ':nexus-migration-testsupport', ':nexus-upgrade-testsupport', ':nexuspro-modern-testsuite', ':nexus-stress-testsuite', ':nexus-repository-testsupport', ':nexus-contributedhandler-testsupport', ':nexuspro-performance-testsuite' ]
+testProjects = [':nexus-insight-testsupport', ':nexus-docker-testsupport', ':nexuspro-migration-testsuite', ':nexus-testlm-edition', ':nexus-stress-master-instance', ':nexuspro-testsuite', ':nexus-testsuite-data', ':testplugin', ':simple-it', ':nexuspro-fabric-testsuite', ':nexus-fabric-testsupport', ':functional-testsuite', ':pax-exam-spock', ':nexus-migration-testsupport', ':nexus-upgrade-testsupport', ':nexuspro-modern-testsuite', ':nexus-stress-testsuite', ':nexus-analytics-testsupport', ':nexus-repository-testsupport', ':nexus-contributedhandler-testsupport', ':nexuspro-performance-testsuite' ]
 
 /**
  Customize these by creating a .nxrm/nxrmrc.groovy. Sample contents:
@@ -108,7 +114,11 @@ configDefaults = [
     backup       : false,   // Backup sonatype-work disabled by default
     restore      : false,   // Restore backup of sonatype-work disabled by default
     builder      : '-T 1C', // default one thread per core
-    randomPassword: false
+    randomPassword: false,
+    // use the default maven property or change to "install" for faster but less stable build which also updates the lock file
+    npmInstall: '',
+    // default to building both debug and production builds with webpack - change to "build" to get the debug build copied as the "production" build (saves around 30s of build time)
+    npmBuild: ''
 ]
 
 buildOptions = [
@@ -217,6 +227,8 @@ ConfigObject processRcConfigFile() {
   config.backup = assign('backup', 'no-backup', config.backup)
   config.restore = assign('restore', 'no-restore', config.restore)
   config.randomPassword = assign('random-password', 'no-random-password', config.randomPassword)
+  config.npmInstall = assign('npm-install', 'npm-ci', config.npmInstall)
+  config.npmBuild = assign('npm-build-all', 'npm-build', config.npmBuild)
 
   debug("config read from RC and merged with defaults: ${config}")
 
@@ -364,7 +376,8 @@ def processCliOptions(args) {
     _ longOpt: 'no-restore', "Disable restore of backup (if enabled by config)"
     _ longOpt: 'random-password', "Enable generation of random password for admin user on initial start"
     _ longOpt: 'no-random-password', "Disable generation of random password (default)"
-    _ longOpt: 'npm-ci', "use `npm ci` for npm dependencies (defaults to install, but ci is faster on ci servers and does a clean install)"
+    _ longOpt: 'npm-install', "use `npm install` for npm dependencies (this results in a faster, but less stable build)"
+    _ longOpt: 'npm-ci', "use `npm ci` for npm dependencies (this results in a slower, but more stable build and is the default)"
 
     // general options
     d longOpt: 'dry-run', 'Dry run, don\'t actually execute anything'
@@ -685,8 +698,11 @@ def processMavenCommand() {
     buildOptions.mavenCommand += ' -Dno-docker'
   }
 
-  if (!cliOptions['npm-ci']) {
-    buildOptions.mavenCommand += ' -Dnpm.install=install'
+  if (rcConfig.npmInstall) {
+    buildOptions.mavenCommand += " -Dnpm.install=${rcConfig.npmInstall}"
+  }
+  if (rcConfig.npmBuild) {
+    buildOptions.mavenCommand += " -Dnpm.build=${rcConfig.npmBuild}"
   }
 
   buildOptions.mavenCommand += ' ' + positionalOptions.join(' ')
@@ -1064,6 +1080,7 @@ def runNxrm() {
     processBuilder.environment().put('DIRECT_MAX_MEM', rcConfig.directMaxMem)
     processBuilder.environment().put('JAVA_DEBUG_PORT', Integer.toString(rcConfig.javaDebugPort))
     processBuilder.environment().put('EXTRA_JAVA_OPTS', rcConfig.vmOptions)
+    processBuilder.environment().put('NEXUS_RESOURCE_DIRS', evaluate(new File('buildsupport/scripts/nexusresourcedirs.groovy')))
 
     def process = processBuilder.start()
     process.inputStream.eachLine {
@@ -1107,10 +1124,12 @@ def sass() {
  * @param cmd a String with the entire command to execute
  * @return
  */
-def mvnw(cmd) {
+def mvnw(String cmd) {
+  def stopwatch = Stopwatch.createStarted()
   info("Running command: ./mvnw $cmd")
-
-  def process = new ProcessBuilder("unbuffer", "./mvnw", *cmd.split()).redirectErrorStream(true).start()
+  List<String> command = ["unbuffer", "./mvnw"]
+  command.addAll(cmd.split())
+  def process = new ProcessBuilder(command).redirectErrorStream(true).start()
   process.inputStream.eachLine {
     // print to console
     println it
@@ -1118,9 +1137,24 @@ def mvnw(cmd) {
     buildLog << it.replaceAll("\u001B\\[[;\\d]*m", "") + "\n"
   }
   process.waitFor()
+  stopwatch.stop()
+
+  if (System.getenv().containsKey('NXRM_STATS')) {
+    def nxrmAndArgs = ['nxrm.groovy']
+    nxrmAndArgs.addAll(args as List<String>)
+    def (nxrmCmd, elapsed, exitValue, mvnwCmd) = [nxrmAndArgs.join(' '), stopwatch.elapsed().seconds,
+                                                  process.exitValue(), command.tail().join(' ')]
+    Paths.get(System.getProperty('user.home'), '.nxrm_build_times') <<
+        "${timestamp()}\t${elapsed}\t${exitValue}\t${nxrmCmd}\t${mvnwCmd}\n"
+  }
 
   info("Done")
   return process
+}
+
+def String timestamp() {
+  ZonedDateTime.now(systemDefault())
+      .format(ofPattern('uuuu.MM.dd.HH.mm.ss'))
 }
 
 // SCRIPT STARTS HERE
@@ -1164,7 +1198,7 @@ processBuilder()
 processMavenCommand()
 
 hr()
-info("-- nxrm.sh build script")
+info("-- nxrm.groovy build script")
 hr()
 info("Build mode   | $buildOptions.buildModeDesc")
 info("Goals/phases | $buildOptions.mavenGoalsAndPhasesDesc")

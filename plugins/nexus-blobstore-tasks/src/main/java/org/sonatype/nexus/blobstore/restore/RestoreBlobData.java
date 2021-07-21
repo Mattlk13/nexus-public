@@ -15,13 +15,15 @@ package org.sonatype.nexus.blobstore.restore;
 import java.util.Properties;
 
 import org.sonatype.nexus.blobstore.api.Blob;
+import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.blobstore.api.BlobAttributesConstants.HEADER_PREFIX;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
-import static org.sonatype.nexus.repository.storage.Bucket.REPO_NAME_HEADER;
+import static org.sonatype.nexus.blobstore.api.BlobStore.CONTENT_TYPE_HEADER;
+import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
 
 /**
  * Simple structure for relevant data for a blob during metadata restoration
@@ -34,13 +36,13 @@ public class RestoreBlobData
 
   private final Properties blobProperties;
 
-  private final String blobStoreName;
+  private final BlobStore blobStore;
 
   private final Repository repository;
 
   public RestoreBlobData(final Blob blob,
                          final Properties blobProperties,
-                         final String blobStoreName,
+                         final BlobStore blobStore,
                          final RepositoryManager repositoryManager)
   {
     checkNotNull(repositoryManager);
@@ -48,7 +50,7 @@ public class RestoreBlobData
 
     this.blob = blob;
     this.blobProperties = blobProperties;
-    this.blobStoreName = blobStoreName;
+    this.blobStore = blobStore;
     this.repository = repositoryManager
         .get(checkNotNull(getProperty(HEADER_PREFIX + REPO_NAME_HEADER), "Blob properties missing repository name"));
   }
@@ -61,8 +63,12 @@ public class RestoreBlobData
     return getProperty(HEADER_PREFIX + BLOB_NAME_HEADER);
   }
 
-  public String getBlobStoreName() {
-    return blobStoreName;
+  public String getBlobType() {
+    return getProperty(HEADER_PREFIX + CONTENT_TYPE_HEADER);
+  }
+
+  public BlobStore getBlobStore() {
+    return blobStore;
   }
 
   public Repository getRepository() {

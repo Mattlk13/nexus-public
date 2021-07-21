@@ -13,38 +13,45 @@
 package org.sonatype.nexus.testsuite.raw;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.time.Duration;
 import java.util.function.BiConsumer;
 
 import javax.inject.Inject;
 
+import org.sonatype.nexus.content.testsuite.groups.OrientAndSQLTestGroup;
 import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.storage.AssetManager;
+import org.sonatype.nexus.repository.capability.GlobalRepositorySettings;
+import org.sonatype.nexus.repository.config.Configuration;
+import org.sonatype.nexus.repository.raw.ContentDisposition;
+import org.sonatype.nexus.repository.raw.ContentDispositionHandler;
+import org.sonatype.nexus.testsuite.testsupport.fixtures.LastDownloadedIntervalRule;
 import org.sonatype.nexus.testsuite.testsupport.raw.RawClient;
 import org.sonatype.nexus.testsuite.testsupport.raw.RawITSupport;
 
 import org.apache.http.HttpResponse;
 import org.joda.time.DateTime;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
-import static com.google.common.io.Files.toByteArray;
 import static java.lang.Thread.sleep;
 import static org.apache.http.entity.ContentType.TEXT_PLAIN;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
-import static org.joda.time.Duration.standardSeconds;
 import static org.sonatype.nexus.repository.http.HttpStatus.BAD_REQUEST;
 import static org.sonatype.nexus.repository.http.HttpStatus.CREATED;
 import static org.sonatype.nexus.repository.http.HttpStatus.OK;
-import static org.sonatype.nexus.repository.storage.WritePolicy.ALLOW_ONCE;
 import static org.sonatype.nexus.testsuite.testsupport.FormatClientSupport.bytes;
 import static org.sonatype.nexus.testsuite.testsupport.FormatClientSupport.status;
 
 /**
  * IT for hosted raw repositories
  */
+@Category(OrientAndSQLTestGroup.class)
 public class RawHostedIT
     extends RawITSupport
 {
@@ -53,7 +60,10 @@ public class RawHostedIT
   public static final String TEST_CONTENT = "alphabet.txt";
 
   @Inject
-  private AssetManager assetManager;
+  private GlobalRepositorySettings repositorySettings;
+
+  @Rule
+  public LastDownloadedIntervalRule lastDownloadedRule = new LastDownloadedIntervalRule(() -> repositorySettings);
 
   private RawClient rawClient;
 
@@ -62,11 +72,13 @@ public class RawHostedIT
     rawClient = rawClient(repos.createRawHosted(HOSTED_REPO));
   }
 
+  @SuppressWarnings("java:S2699") // sonar isn't detecting nested assertions
   @Test
   public void uploadAndDownload() throws Exception {
     uploadAndDownload(rawClient, TEST_CONTENT);
   }
 
+  @SuppressWarnings("java:S2699") // sonar isn't detecting nested assertions
   @Test
   public void redeploy() throws Exception {
     uploadAndDownload(rawClient, TEST_CONTENT);
@@ -75,7 +87,7 @@ public class RawHostedIT
 
   @Test
   public void failWhenRedeployNotAllowed() throws Exception {
-    rawClient = rawClient(repos.createRawHosted(testName.getMethodName(), ALLOW_ONCE));
+    rawClient = rawClient(repos.createRawHosted(testName.getMethodName(), "ALLOW_ONCE"));
 
     File testFile = resolveTestFile(TEST_CONTENT);
 
@@ -86,7 +98,7 @@ public class RawHostedIT
 
   @Test
   public void setLastDownloadOnGetNotPut() throws Exception {
-    Repository repository = repos.createRawHosted(testName.getMethodName(), ALLOW_ONCE);
+    Repository repository = repos.createRawHosted(testName.getMethodName(), "ALLOW_ONCE");
 
     rawClient = rawClient(repository);
 
@@ -98,26 +110,62 @@ public class RawHostedIT
     HttpResponse response = rawClient.get(TEST_CONTENT);
 
     assertThat(status(response), is(OK));
-    assertThat(bytes(response), is(toByteArray(testFile)));
+    assertThat(bytes(response), is(Files.readAllBytes(testFile.toPath())));
     assertThat(getLastDownloadedTime(repository, testFile.getName()).isBeforeNow(), is(equalTo(true)));
   }
 
   @Test
   public void lastDownloadedIsUpdatedWhenFrequencyConfigured() throws Exception {
-    assetManager.setLastDownloadedInterval(standardSeconds(1));
+    lastDownloadedRule.setLastDownloadedInterval(Duration.ofSeconds(1));
 
     verifyLastDownloadedTime((newDate, initialDate) -> assertThat(newDate, is(greaterThan(initialDate))));
   }
 
   @Test
   public void lastDownloadedIsNotUpdatedWhenFrequencyNotExceeded() throws Exception {
-    assetManager.setLastDownloadedInterval(standardSeconds(10));
+    lastDownloadedRule.setLastDownloadedInterval(Duration.ofSeconds(10));
 
     verifyLastDownloadedTime((newDate, initialDate) -> assertThat(newDate, is(equalTo(initialDate))));
   }
 
-  private void verifyLastDownloadedTime(BiConsumer<DateTime, DateTime> matcher) throws Exception {
-    Repository repository = repos.createRawHosted(testName.getMethodName(), ALLOW_ONCE);
+  @Test
+  public void inlineContentDispositionSetsHeader() throws Exception {
+    Configuration configuration = repos.createHosted(testName.getMethodName(), "raw-hosted", "ALLOW_ONCE", true);
+    configuration.attributes("raw").set(ContentDispositionHandler.CONTENT_DISPOSITION_CONFIG_KEY, ContentDisposition.INLINE.name());
+
+    Repository repository = repos.createRepository(configuration);
+
+    rawClient = rawClient(repository);
+
+    File testFile = resolveTestFile(TEST_CONTENT);
+
+    assertThat(rawClient.put(TEST_CONTENT, TEXT_PLAIN, testFile), is(CREATED));
+    assertThat(getLastDownloadedTime(repository, testFile.getName()), is(equalTo(null)));
+
+    HttpResponse response = rawClient.get(TEST_CONTENT);
+    assertThat(response.getFirstHeader("Content-Disposition").getValue(), is("inline"));
+  }
+
+  @Test
+  public void attachmentContentDispositionSetsHeader() throws Exception {
+    Configuration configuration = repos.createHosted(testName.getMethodName(), "raw-hosted", "ALLOW_ONCE", true);
+    configuration.attributes("raw").set(ContentDispositionHandler.CONTENT_DISPOSITION_CONFIG_KEY, ContentDisposition.ATTACHMENT.name());
+
+    Repository repository = repos.createRepository(configuration);
+
+    rawClient = rawClient(repository);
+
+    File testFile = resolveTestFile(TEST_CONTENT);
+
+    assertThat(rawClient.put(TEST_CONTENT, TEXT_PLAIN, testFile), is(CREATED));
+    assertThat(getLastDownloadedTime(repository, testFile.getName()), is(equalTo(null)));
+
+    HttpResponse response = rawClient.get(TEST_CONTENT);
+    assertThat(response.getFirstHeader("Content-Disposition").getValue(), is("attachment"));
+  }
+
+  private void verifyLastDownloadedTime(final BiConsumer<DateTime, DateTime> matcher) throws Exception {
+    Repository repository = repos.createRawHosted(testName.getMethodName(), "ALLOW_ONCE");
 
     RawClient rawClient = rawClient(repository);
 

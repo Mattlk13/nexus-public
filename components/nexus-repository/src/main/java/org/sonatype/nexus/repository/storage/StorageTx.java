@@ -13,7 +13,6 @@
 package org.sonatype.nexus.repository.storage;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
@@ -21,15 +20,18 @@ import java.util.Set;
 import javax.annotation.Nullable;
 
 import org.sonatype.nexus.blobstore.api.Blob;
+import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobRef;
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.common.hash.HashAlgorithm;
+import org.sonatype.nexus.common.io.InputStreamSupplier;
 import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Repository;
+import org.sonatype.nexus.repository.mime.ContentValidator;
+import org.sonatype.nexus.repository.view.payloads.TempBlob;
 import org.sonatype.nexus.transaction.Transaction;
 import org.sonatype.nexus.transaction.TransactionalSession;
 
-import com.google.common.base.Supplier;
 import com.google.common.hash.HashCode;
 import com.orientechnologies.orient.core.db.document.ODatabaseDocumentTx;
 import com.orientechnologies.orient.core.record.impl.ODocument;
@@ -134,6 +136,29 @@ public interface StorageTx
    * @since 3.13
    */
   Iterable<Asset> browseAssets(Query query, Bucket bucket);
+
+  /**
+   * Gets all assets owned by the specified bucket for a given query with a limit option.
+   * This method will NOT see uncommitted changes performed in this same TX, if any.
+   * The returned {@link Iterable} may throw {@link RuntimeException} if timeout to
+   * receive new elements is breached.
+   *
+   * For setting the limit @see Continuations.BROWSE_LIMIT
+   *
+   * @since 3.32
+   */
+  Iterable<Asset> browseAllPartiallyByLimit(Query query, Bucket bucket);
+
+  /**
+   * Gets all assets owned by the specified bucket for a given query. This method will NOT see uncommitted changes
+   * performed in this same TX, if any. The returned {@link Iterable} may throw {@link RuntimeException} if timeout to
+   * receive new elements is breached.
+   *
+   * @see OrientAsyncHelper
+   *
+   * @since 3.27
+   */
+  Iterable<Asset> browseAssets(Query query, Bucket bucket, int bufferSize, int bufferTimeoutSeconds);
 
   /**
    * Gets all assets owned by the specified component.
@@ -252,6 +277,20 @@ public interface StorageTx
                           final String name,
                           @Nullable final String version,
                           final Repository repository);
+
+
+  /**
+   * Gets the number of assets matching the given where clause that are grouped by columns.
+   */
+  long countGroupedAssets(@Nullable String whereClause,
+                          @Nullable Map<String, Object> parameters,
+                          @Nullable Iterable<Repository> repositories,
+                          String querySuffix);
+
+  /**
+   * Gets the number of assets matching the given {@link Query} clause grouped by a column
+   */
+  long countGroupedAssets(Query query, @Nullable Iterable<Repository> repositories);
 
   /**
    * Check for the existence of an asset with {@code name} in {@code repository}.
@@ -416,7 +455,7 @@ public interface StorageTx
    */
   AssetBlob setBlob(Asset asset,
                     String blobName,
-                    final Supplier<InputStream> streamSupplier,
+                    final InputStreamSupplier streamSupplier,
                     Iterable<HashAlgorithm> hashAlgorithms,
                     @Nullable Map<String, String> headers,
                     @Nullable String declaredContentType,
@@ -480,7 +519,7 @@ public interface StorageTx
    * transaction using {@link #attachBlob(Asset, AssetBlob)} method.
    */
   AssetBlob createBlob(String blobName,
-                       final Supplier<InputStream> streamSupplier,
+                       final InputStreamSupplier streamSupplier,
                        Iterable<HashAlgorithm> hashAlgorithms,
                        @Nullable Map<String, String> headers,
                        @Nullable String declaredContentType,
@@ -526,6 +565,13 @@ public interface StorageTx
    * type. The asset's old blob, if any, will be deleted.
    */
   void attachBlob(Asset asset, AssetBlob assetBlob);
+
+  /**
+   * Attaches asset metadata to a Blob.
+   *
+   * @since 3.32
+   */
+  void attachAssetMetadata(Asset asset, BlobId blobId);
 
   /**
    * Gets a Blob, or {@code null if not found}.

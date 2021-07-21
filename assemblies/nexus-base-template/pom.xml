@@ -21,7 +21,7 @@
   <parent>
     <groupId>org.sonatype.nexus.assemblies</groupId>
     <artifactId>nexus-assemblies</artifactId>
-    <version>3.21.0-SNAPSHOT</version>
+    <version>3.33.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>nexus-base-template</artifactId>
@@ -224,6 +224,7 @@
                 <feature>kar</feature>
                 <feature>log</feature>
                 <feature>package</feature>
+                <feature>scr</feature>
                 <feature>shell</feature>
                 <feature>service</feature>
                 <feature>system</feature>
@@ -234,7 +235,12 @@
               </bootFeatures>
               <installedFeatures>
                 <feature>management</feature>
-                <feature>ssh</feature>
+                <!-- 
+                To enable remote access to the karaf console, uncomment the ssh feature and add ssh to featuresBoot in 
+                org.apache.karaf.features.cfg e.g. featuresBoot = nexus-boot-feature,ssh
+                Note: Enabling remote access is not recommended or supported.
+                -->
+                <!-- <feature>ssh</feature> -->
                 <feature>nexus-orient</feature>
                 <feature>nexus-datastore-mybatis</feature>
                 <feature>nexus-core-feature</feature>
@@ -263,11 +269,13 @@
                       tofile="${project.build.directory}/assembly/lib/boot/nexus-main.jar"/>
                 <copy file="${javax.activation:activation:jar}"
                       todir="${project.build.directory}/assembly/lib/boot"/>
-                <copy file="${javax.xml.bind:jaxb-api:jar}"
+                <copy file="${jakarta.xml.bind:jakarta.xml.bind-api:jar}"
                       todir="${project.build.directory}/assembly/lib/boot"/>
-                <copy file="${com.sun.xml.bind:jaxb-core:jar}"
+                <copy file="${org.glassfish.jaxb:jaxb-runtime:jar}"
                       todir="${project.build.directory}/assembly/lib/boot"/>
-                <copy file="${com.sun.xml.bind:jaxb-impl:jar}"
+                <copy file="${org.glassfish.jaxb:txw2:jar}"
+                      todir="${project.build.directory}/assembly/lib/boot"/>
+                <copy file="${com.sun.istack:istack-commons-runtime:jar}"
                       todir="${project.build.directory}/assembly/lib/boot"/>
 
                 <!-- install additional framework jars -->
@@ -275,11 +283,11 @@
                       todir="${project.build.directory}/assembly/lib"/>
                 <copy file="${com.google.code.findbugs:jsr305:jar}"
                       todir="${project.build.directory}/assembly/lib"/>
-                <copy file="${org.bouncycastle:bcprov-jdk15on:jar}"
+                <copy file="${org.bouncycastle:bcprov-jdk15to18:jar}"
                       todir="${project.build.directory}/assembly/lib"/>
-                <copy file="${org.bouncycastle:bcpkix-jdk15on:jar}"
+                <copy file="${org.bouncycastle:bcpkix-jdk15to18:jar}"
                       todir="${project.build.directory}/assembly/lib"/>
-                <copy file="${org.bouncycastle:bcpg-jdk15on:jar}"
+                <copy file="${org.bouncycastle:bcpg-jdk15to18:jar}"
                       todir="${project.build.directory}/assembly/lib"/>
 
                 <!-- put nexus-orient-console in lib/support along with its dependencies -->

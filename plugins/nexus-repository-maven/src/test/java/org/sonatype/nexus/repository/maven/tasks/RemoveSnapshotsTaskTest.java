@@ -34,7 +34,7 @@ import org.mockito.Mock;
 
 import static com.google.common.collect.Lists.newArrayList;
 import static org.hamcrest.CoreMatchers.is;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -147,14 +147,14 @@ public class RemoveSnapshotsTaskTest
     verify(removeSnapshotsFacet, times(2)).removeSnapshots(any());
   }
 
-  private void verifyGroups(Repository... groups) {
+  private void verifyGroups(final Repository... groups) {
     for (Repository group : groups) {
       assertThat(taskUnderTest.hasBeenProcessed(group), is(true));
       verify(group, never()).facet(RemoveSnapshotsFacet.class); // groups should not have the facet executed against
     }
   }
 
-  private void verifyRepoProcessed(Repository repo, int numFacetExecutions) {
+  private void verifyRepoProcessed(final Repository repo, final int numFacetExecutions) {
     assertThat(taskUnderTest.hasBeenProcessed(repo), is(true));
     verify(repo, times(numFacetExecutions)).facet(RemoveSnapshotsFacet.class);
   }
@@ -169,7 +169,7 @@ public class RemoveSnapshotsTaskTest
     return repo;
   }
 
-  private Repository mockGroup(List<Repository> groupMembers) {
+  private Repository mockGroup(final List<Repository> groupMembers) {
     Repository group = mock(Repository.class);
     GroupFacet facet = mock(GroupFacet.class);
 

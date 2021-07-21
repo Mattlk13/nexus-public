@@ -18,11 +18,11 @@ package org.sonatype.nexus.datastore.api;
  * @since 3.19
  */
 public class DataStoreNotFoundException
-    extends RuntimeException
+    extends DataAccessException
 {
   private static final long serialVersionUID = -7516739829244823213L;
 
   public DataStoreNotFoundException(final String storeName) {
-    super("Data store not found: " + storeName);
+    super("Data store not found: '" + storeName + "'");
   }
 }

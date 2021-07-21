@@ -51,7 +51,7 @@ import static java.lang.String.format;
 import static java.util.Collections.singletonList;
 import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.mock;
@@ -59,8 +59,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA1;
+import static org.sonatype.nexus.repository.config.ConfigurationConstants.STORAGE;
 import static org.sonatype.nexus.repository.storage.MetadataNodeEntityAdapter.P_ATTRIBUTES;
-import static org.sonatype.nexus.repository.storage.StorageFacetConstants.STORAGE;
 
 /**
  * Unit tests for {@link StorageFacetImpl}.
@@ -141,6 +141,9 @@ public class StorageFacetImplTest
   private ConstraintViolationFactory violationFactory;
 
   @Mock
+  private BlobMetadataStorage blobMetadataStorage;
+
+  @Mock
   private AssetManager assetManager;
 
   @Captor
@@ -176,7 +179,9 @@ public class StorageFacetImplTest
         mimeRulesSourceSelector,
         storageFacetManager,
         componentFactory,
-        violationFactory
+        violationFactory,
+        () -> null,
+        blobMetadataStorage
     );
     underTest.attach(repository);
   }
@@ -198,7 +203,7 @@ public class StorageFacetImplTest
         assertThat(tempBlob.getHashesVerified(), is(true));
         assertThat(tempBlob.getBlob(), is(blob));
       }
-      verify(blobStore).deleteHard(blobId);
+      verify(blobStore).asyncDelete(blobId);
     }
   }
 
@@ -219,7 +224,7 @@ public class StorageFacetImplTest
       assertThat(tempBlob.getHashesVerified(), is(true));
       assertThat(tempBlob.getBlob(), is(blob));
     }
-    verify(blobStore).deleteHard(blobId);
+    verify(blobStore).asyncDelete(blobId);
   }
 
   @Test
@@ -243,7 +248,19 @@ public class StorageFacetImplTest
       assertThat(mapArgumentCaptor.getValue(), hasEntry(BlobStore.CREATED_BY_IP_HEADER, "10.1.1.1"));
       assertThat(mapArgumentCaptor.getValue(), hasEntry(BlobStore.CREATED_BY_HEADER, "jpicard"));
     }
-    verify(blobStore).deleteHard(blobId);
+    verify(blobStore).asyncDelete(blobId);
+  }
+
+  @Test
+  public void blobStoreNotExistsConstraintViolation() throws Exception {
+    underTest.doConfigure(configuration);
+    when(blobStoreManager.get(BLOB_STORE_NAME)).thenReturn(null);
+    when(blobStoreManager.getParent(BLOB_STORE_NAME)).thenReturn(Optional.empty());
+
+    underTest.validate(configuration);
+    verify(violationFactory, times(1)).createViolation(format("%s.%s.blobStoreName", P_ATTRIBUTES, STORAGE),
+        format("Blob Store '%s' does not exist",
+            BLOB_STORE_NAME));
   }
 
   @Test

@@ -18,7 +18,6 @@ import org.sonatype.goodies.testsupport.TestSupport
 import org.sonatype.nexus.common.event.EventManager
 import org.sonatype.nexus.common.log.LastShutdownTimeService
 import org.sonatype.nexus.common.node.NodeAccess
-import org.sonatype.nexus.orient.DatabaseStatusDelayedExecutor
 import org.sonatype.nexus.quartz.internal.orient.DistributedQuartzEventInspector
 import org.sonatype.nexus.quartz.internal.orient.JobCreatedEvent
 import org.sonatype.nexus.quartz.internal.orient.JobDeletedEvent
@@ -41,6 +40,7 @@ import org.sonatype.nexus.scheduling.schedule.Manual
 import org.sonatype.nexus.scheduling.schedule.Now
 import org.sonatype.nexus.scheduling.schedule.Schedule
 import org.sonatype.nexus.testcommon.event.SimpleEventManager
+import org.sonatype.nexus.thread.DatabaseStatusDelayedExecutor
 
 import com.google.common.collect.Lists
 import org.joda.time.DateTime
@@ -68,7 +68,7 @@ import org.quartz.spi.OperableTrigger
 import static junit.framework.TestCase.assertEquals
 import static org.hamcrest.Matchers.equalTo
 import static org.hamcrest.Matchers.hasSize
-import static org.junit.Assert.assertThat
+import static org.hamcrest.MatcherAssert.assertThat
 import static org.mockito.Matchers.any
 import static org.mockito.Matchers.anyObject
 import static org.mockito.Matchers.eq
@@ -110,7 +110,7 @@ class QuartzSchedulerSPITest
     def provider = mock(Provider)
     jobStore = mock(JobStore)
     when(provider.get()).thenReturn(jobStore)
-    scheduler = new QuartzSchedulerProvider(nodeAccess, provider, mock(JobFactory), 1);
+    scheduler = new QuartzSchedulerProvider(nodeAccess, provider, mock(JobFactory), 1, 5);
     eventManager = new SimpleEventManager()
 
     def lastShutdownTimeService = mock(LastShutdownTimeService)

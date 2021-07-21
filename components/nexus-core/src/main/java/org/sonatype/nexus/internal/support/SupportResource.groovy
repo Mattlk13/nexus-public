@@ -42,7 +42,7 @@ import static javax.ws.rs.core.MediaType.APPLICATION_OCTET_STREAM
 @Named
 @Singleton
 @Path(SupportResource.RESOURCE_URI)
-@Api('support')
+@Api('Support')
 class SupportResource
     extends ComponentSupport
     implements Resource
@@ -66,5 +66,22 @@ class SupportResource
       supportZipGenerator.generate(request, 'support', output)
     }
     Response.ok(entity).header('Content-Disposition', "attachment; filename=\"$name\"").build()
+  }
+
+  @RequiresAuthentication
+  @RequiresPermissions('nexus:atlas:create')
+  @ApiOperation('Creates a support zip and returns the path')
+  @Consumes([APPLICATION_JSON])
+  @Produces([APPLICATION_JSON])
+  @POST
+  @Path("/supportzippath")
+  SupportZipXO supportzippath(final SupportZipGenerator.Request request) {
+    def result = supportZipGenerator.generate(request)
+    return new SupportZipXO(
+        file: result.localPath,
+        name: result.filename,
+        size: result.size,
+        truncated: result.truncated
+    )
   }
 }

@@ -14,6 +14,7 @@ package org.sonatype.nexus.repository.rest.internal.resources;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.annotation.Nullable;
@@ -36,19 +37,22 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response.Status;
 
 import org.sonatype.goodies.common.ComponentSupport;
+import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.common.entity.ContinuationTokenHelper;
 import org.sonatype.nexus.common.entity.ContinuationTokenHelper.ContinuationTokenException;
 import org.sonatype.nexus.common.entity.DetachedEntityId;
 import org.sonatype.nexus.repository.IllegalOperationException;
 import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.browse.BrowseResult;
 import org.sonatype.nexus.repository.browse.BrowseService;
-import org.sonatype.nexus.repository.browse.QueryOptions;
 import org.sonatype.nexus.repository.maintenance.MaintenanceService;
-import org.sonatype.nexus.repository.rest.ComponentsResourceExtension;
+import org.sonatype.nexus.repository.query.PageResult;
+import org.sonatype.nexus.repository.query.QueryOptions;
+import org.sonatype.nexus.repository.rest.api.AssetXODescriptor;
 import org.sonatype.nexus.repository.rest.api.ComponentXO;
 import org.sonatype.nexus.repository.rest.api.ComponentXOFactory;
-import org.sonatype.nexus.repository.rest.internal.api.RepositoryItemIDXO;
+import org.sonatype.nexus.repository.rest.api.RepositoryItemIDXO;
+import org.sonatype.nexus.repository.rest.api.RepositoryManagerRESTAdapter;
+import org.sonatype.nexus.repository.rest.cma.ComponentsResourceExtension;
 import org.sonatype.nexus.repository.rest.internal.resources.doc.ComponentsResourceDoc;
 import org.sonatype.nexus.repository.storage.Component;
 import org.sonatype.nexus.repository.storage.ComponentEntityAdapter;
@@ -64,18 +68,20 @@ import static java.lang.String.format;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.toList;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static org.sonatype.nexus.common.app.FeatureFlags.ORIENT_ENABLED;
 import static org.sonatype.nexus.common.entity.EntityHelper.id;
 import static org.sonatype.nexus.repository.http.HttpStatus.NOT_ACCEPTABLE;
 import static org.sonatype.nexus.repository.http.HttpStatus.NOT_FOUND;
 import static org.sonatype.nexus.repository.http.HttpStatus.UNPROCESSABLE_ENTITY;
-import static org.sonatype.nexus.repository.rest.api.AssetXO.fromAsset;
-import static org.sonatype.nexus.repository.rest.internal.api.RepositoryItemIDXO.fromString;
+import static org.sonatype.nexus.repository.rest.api.RepositoryItemIDXO.fromString;
+import static org.sonatype.nexus.repository.rest.cma.AssetXOBuilder.fromAsset;
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
 /**
  * @since 3.4
  */
-@Named
+@FeatureFlag(name = ORIENT_ENABLED)
+@Named("default")
 @Singleton
 @Path(ComponentsResource.RESOURCE_URI)
 @Produces(APPLICATION_JSON)
@@ -105,6 +111,8 @@ public class ComponentsResource
 
   private final Set<ComponentsResourceExtension> componentsResourceExtensions;
 
+  private final Map<String, AssetXODescriptor> assetDescriptors;
+
   @Inject
   public ComponentsResource(final RepositoryManagerRESTAdapter repositoryManagerRESTAdapter,
                             final BrowseService browseService,
@@ -114,7 +122,8 @@ public class ComponentsResource
                             final UploadManager uploadManager,
                             final UploadConfiguration uploadConfiguration,
                             final ComponentXOFactory componentXOFactory,
-                            final Set<ComponentsResourceExtension> componentsResourceExtensions)
+                            final Set<ComponentsResourceExtension> componentsResourceExtensions,
+                            @Nullable final Map<String, AssetXODescriptor> assetDescriptors)
   {
     this.repositoryManagerRESTAdapter = checkNotNull(repositoryManagerRESTAdapter);
     this.browseService = checkNotNull(browseService);
@@ -125,6 +134,7 @@ public class ComponentsResource
     this.uploadConfiguration = checkNotNull(uploadConfiguration);
     this.componentXOFactory = checkNotNull(componentXOFactory);
     this.componentsResourceExtensions = checkNotNull(componentsResourceExtensions);
+    this.assetDescriptors = assetDescriptors;
   }
 
   @Override
@@ -135,7 +145,7 @@ public class ComponentsResource
     Repository repository = repositoryManagerRESTAdapter.getRepository(repositoryId);
 
     //must explicitly order by id or the generate sql will automatically order on group/name/version. (see BrowseComponentsSqlBuider)
-    BrowseResult<Component> componentBrowseResult = browseService
+    PageResult<Component> componentBrowseResult = browseService
         .browseComponents(repository,
             new QueryOptions(null, "id", "asc", 0, 10, lastIdFromContinuationToken(continuationToken)));
 
@@ -167,7 +177,7 @@ public class ComponentsResource
         .setAssets(browseService.browseComponentAssets(repository, component.getEntityMetadata().getId().getValue())
             .getResults()
             .stream()
-            .map(asset -> fromAsset(asset, repository))
+            .map(asset -> fromAsset(asset, repository, this.assetDescriptors))
             .collect(toList()));
 
     componentXO.setGroup(component.group());
@@ -239,6 +249,10 @@ public class ComponentsResource
   {
     if (!uploadConfiguration.isEnabled()) {
       throw new WebApplicationException(NOT_FOUND);
+    }
+    if (request.getContentType() == null || !request.getContentType().startsWith("multipart/")) {
+      throw new WebApplicationMessageException(Status.BAD_REQUEST, "\"Expected multipart Content-Type\"",
+          MediaType.APPLICATION_JSON);
     }
 
     Repository repository = repositoryManagerRESTAdapter.getRepository(repositoryId);

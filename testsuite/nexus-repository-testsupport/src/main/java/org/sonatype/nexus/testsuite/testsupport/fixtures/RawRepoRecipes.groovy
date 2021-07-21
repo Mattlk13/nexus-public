@@ -16,7 +16,6 @@ import javax.annotation.Nonnull
 
 import org.sonatype.nexus.repository.Repository
 import org.sonatype.nexus.repository.config.Configuration
-import org.sonatype.nexus.repository.storage.WritePolicy
 
 import groovy.transform.CompileStatic
 
@@ -30,9 +29,10 @@ trait RawRepoRecipes
 
   @Nonnull
   Repository createRawHosted(final String name,
-                             final WritePolicy writePolicy = WritePolicy.ALLOW)
+                             final String writePolicy = "ALLOW",
+                             final boolean strictContentTypeValidation = true)
   {
-    createRepository(createHosted(name, 'raw-hosted', writePolicy))
+    createRepository(createHosted(name, 'raw-hosted', writePolicy, strictContentTypeValidation))
   }
 
   @Nonnull

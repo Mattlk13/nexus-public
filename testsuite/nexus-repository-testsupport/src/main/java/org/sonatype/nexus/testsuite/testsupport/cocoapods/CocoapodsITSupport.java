@@ -12,23 +12,8 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.cocoapods;
 
-import java.util.List;
-
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
-
-import org.sonatype.nexus.orient.DatabaseInstance;
-import org.sonatype.nexus.orient.DatabaseInstanceNames;
 import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.storage.Asset;
 import org.sonatype.nexus.testsuite.testsupport.RepositoryITSupport;
-
-import com.orientechnologies.orient.core.db.document.ODatabaseDocumentTx;
-import com.orientechnologies.orient.core.record.impl.ODocument;
-import com.orientechnologies.orient.core.sql.OCommandSQL;
-
-import static java.util.stream.Collectors.toList;
 
 public class CocoapodsITSupport
     extends RepositoryITSupport
@@ -44,8 +29,6 @@ public class CocoapodsITSupport
   protected static final int REMOTE_PORT_HTTP = 57576;
 
   protected static final String GITHUB_API_HOST = "localhost:" + REMOTE_PORT_GITHUB;
-
-  protected static final String GITHUB_SPECS_MASTER_REPO = "https://github.com/cocoapods/specs/";
 
   protected static final String NEXUS_PROPERTIES_FILE = "etc/nexus-default.properties";
 
@@ -67,47 +50,26 @@ public class CocoapodsITSupport
       + POD_NAME
       + "/"
       + POD_VERSION
-      + "/http/localhost:%s/"
-      + POD_GITHUB_API_PATH
+      + "/"
+      + POD_VERSION
       + ".tar.gz";
 
   protected static final String POD_HTTP_PATH = "pods/"
       + POD_NAME
       + "/"
       + POD_VERSION
-      + "/http/localhost:%s/"
-      + POD_REMOTE_HTTP_PATH;
+      + "/1.0.0.tar.gz";
 
-  protected static final String SPEC_PATH = "Specs/";
+  protected static final String SPEC_PATH = "Specs/0/0/b/test_pod/1.0.0/";
 
   protected static final String NESTED_PROXY_REPO_NAME = "nested-cocoapods-proxy";
 
   protected static final String PROXY_REPO_NAME = "cocoapods-proxy";
-
-  @Inject
-  @Named(DatabaseInstanceNames.COMPONENT)
-  Provider<DatabaseInstance> databaseInstanceProvider;
 
   protected Repository createCocoapodsProxyRepository(
       final String name,
       final String remoteUrl)
   {
     return repos.createCocoapodsProxy(name, remoteUrl);
-  }
-
-  private Asset toAsset(final ODocument doc) {
-    Asset asset = new Asset();
-    asset.name(doc.field("name", String.class).toString());
-    asset.contentType(doc.field("content_type", String.class).toString());
-    return asset;
-  }
-
-  protected List<Asset> findAssets(final String repositoryName) {
-    String sql = "SELECT * FROM asset WHERE bucket.repository_name = ?";
-    try (ODatabaseDocumentTx tx = databaseInstanceProvider.get().acquire()) {
-      tx.begin();
-      List<ODocument> results = tx.command(new OCommandSQL(sql)).execute(repositoryName);
-      return results.stream().map(this::toAsset).collect(toList());
-    }
   }
 }

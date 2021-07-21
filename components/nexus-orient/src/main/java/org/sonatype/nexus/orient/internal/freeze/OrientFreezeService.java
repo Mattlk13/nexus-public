@@ -14,6 +14,7 @@ package org.sonatype.nexus.orient.internal.freeze;
 
 import java.util.List;
 
+import javax.annotation.Priority;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -36,10 +37,11 @@ import static org.sonatype.nexus.orient.freeze.FreezeRequest.InitiatorType.USER_
 /**
  * Orient implementation of common {@link FreezeService}.
  *
- * @since 3.next
+ * @since 3.21
  */
 @Named
 @Singleton
+@Priority(Integer.MAX_VALUE)
 public class OrientFreezeService
     extends ComponentSupport
     implements FreezeService

@@ -12,15 +12,16 @@
  */
 package org.sonatype.nexus.repository.content.store;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.common.entity.EntityUUID;
 import org.sonatype.nexus.datastore.api.DataSession;
+import org.sonatype.nexus.datastore.api.DuplicateKeyException;
 import org.sonatype.nexus.repository.content.ContentRepository;
+import org.sonatype.nexus.repository.content.store.example.TestContentRepositoryDAO;
 
-import org.apache.ibatis.exceptions.PersistenceException;
-import org.joda.time.DateTime;
 import org.junit.Test;
 
 import static org.hamcrest.Matchers.allOf;
@@ -28,15 +29,16 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.emptyIterable;
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
 /**
  * Test {@link ContentRepositoryDAO}.
  */
 public class ContentRepositoryDAOTest
-    extends RepositoryContentTestSupport
+    extends ExampleContentTestSupport
 {
   @Test
   public void testCrudOperations() throws InterruptedException {
@@ -51,7 +53,7 @@ public class ContentRepositoryDAOTest
 
     // CREATE
 
-    try (DataSession<?> session = sessionRule.openSession("content")) {
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
       ContentRepositoryDAO dao = session.access(TestContentRepositoryDAO.class);
 
       assertThat(dao.browseContentRepositories(), emptyIterable());
@@ -72,7 +74,7 @@ public class ContentRepositoryDAOTest
 
     // TRY CREATE AGAIN
 
-    try (DataSession<?> session = sessionRule.openSession("content")) {
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
       ContentRepositoryDAO dao = session.access(TestContentRepositoryDAO.class);
 
       ContentRepositoryData duplicate = new ContentRepositoryData();
@@ -84,13 +86,13 @@ public class ContentRepositoryDAOTest
       session.getTransaction().commit();
       fail("Cannot create the same repository twice");
     }
-    catch (PersistenceException e) {
+    catch (DuplicateKeyException e) {
       logger.debug("Got expected exception", e);
     }
 
     // READ
 
-    try (DataSession<?> session = sessionRule.openSession("content")) {
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
       ContentRepositoryDAO dao = session.access(TestContentRepositoryDAO.class);
 
       assertFalse(dao.readContentRepository(new EntityUUID(new UUID(0, 0))).isPresent());
@@ -106,19 +108,19 @@ public class ContentRepositoryDAOTest
 
     // UPDATE
 
-    Thread.sleep(2); // make sure any new last updated times will be different
+    Thread.sleep(2); // NOSONAR make sure any new last updated times will be different
 
     // must use a new session as CURRENT_TIMESTAMP (used for last_updated) is fixed once used inside a session
 
-    try (DataSession<?> session = sessionRule.openSession("content")) {
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
       ContentRepositoryDAO dao = session.access(TestContentRepositoryDAO.class);
 
       tempResult = dao.readContentRepository(configRepositoryId1).get();
 
-      DateTime oldCreated = tempResult.created();
-      DateTime oldLastUpdated = tempResult.lastUpdated();
+      OffsetDateTime oldCreated = tempResult.created();
+      OffsetDateTime oldLastUpdated = tempResult.lastUpdated();
 
-      contentRepository1.attributes().child("custom-section-1").set("custom-key-1", "more-test-values-1");
+      contentRepository1.attributes("custom-section-1").set("custom-key-1", "more-test-values-1");
       dao.updateContentRepositoryAttributes(contentRepository1);
 
       tempResult = dao.readContentRepository(configRepositoryId1).get();
@@ -133,7 +135,7 @@ public class ContentRepositoryDAOTest
       oldLastUpdated = tempResult.lastUpdated();
 
       contentRepository2.repositoryId = null; // check a 'detached' entity with no internal id can be updated
-      contentRepository2.attributes().child("custom-section-2").set("custom-key-2", "more-test-values-2");
+      contentRepository2.attributes("custom-section-2").set("custom-key-2", "more-test-values-2");
       dao.updateContentRepositoryAttributes(contentRepository2);
 
       tempResult = dao.readContentRepository(configRepositoryId2).get();
@@ -147,19 +149,19 @@ public class ContentRepositoryDAOTest
 
     // UPDATE AGAIN
 
-    Thread.sleep(2); // make sure any new last updated times will be different
+    Thread.sleep(2); // NOSONAR make sure any new last updated times will be different
 
     // must use a new session as CURRENT_TIMESTAMP (used for last_updated) is fixed once used inside a session
 
-    try (DataSession<?> session = sessionRule.openSession("content")) {
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
       ContentRepositoryDAO dao = session.access(TestContentRepositoryDAO.class);
 
       tempResult = dao.readContentRepository(configRepositoryId1).get();
 
-      DateTime oldCreated = tempResult.created();
-      DateTime oldLastUpdated = tempResult.lastUpdated();
+      OffsetDateTime oldCreated = tempResult.created();
+      OffsetDateTime oldLastUpdated = tempResult.lastUpdated();
 
-      contentRepository1.attributes().child("custom-section-1").set("custom-key-1", "more-test-values-again");
+      contentRepository1.attributes("custom-section-1").set("custom-key-1", "more-test-values-again");
       dao.updateContentRepositoryAttributes(contentRepository1);
 
       tempResult = dao.readContentRepository(configRepositoryId1).get();
@@ -186,19 +188,23 @@ public class ContentRepositoryDAOTest
 
     // DELETE
 
-    try (DataSession<?> session = sessionRule.openSession("content")) {
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
       ContentRepositoryDAO dao = session.access(TestContentRepositoryDAO.class);
+      ContentRepositoryData candidate = new ContentRepositoryData();
 
-      assertTrue(dao.deleteContentRepository(configRepositoryId1));
+      candidate.setConfigRepositoryId(configRepositoryId1);
+      assertTrue(dao.deleteContentRepository(candidate));
 
       assertThat(dao.browseContentRepositories(),
           contains(allOf(sameConfigRepository(contentRepository2), sameAttributes(contentRepository2))));
 
-      assertTrue(dao.deleteContentRepository(configRepositoryId2));
+      candidate.setConfigRepositoryId(configRepositoryId2);
+      assertTrue(dao.deleteContentRepository(candidate));
 
       assertThat(dao.browseContentRepositories(), emptyIterable());
 
-      assertFalse(dao.deleteContentRepository(new EntityUUID(new UUID(0, 0))));
+      candidate.setConfigRepositoryId(new EntityUUID(new UUID(0, 0)));
+      assertFalse(dao.deleteContentRepository(candidate));
     }
   }
 }

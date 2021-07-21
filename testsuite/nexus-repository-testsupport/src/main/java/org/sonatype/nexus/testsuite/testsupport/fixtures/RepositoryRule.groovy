@@ -14,6 +14,7 @@ package org.sonatype.nexus.testsuite.testsupport.fixtures
 
 import javax.inject.Provider
 
+import org.sonatype.nexus.common.app.BaseUrlHolder
 import org.sonatype.nexus.repository.Repository
 import org.sonatype.nexus.repository.config.Configuration
 import org.sonatype.nexus.repository.manager.RepositoryManager
@@ -28,8 +29,8 @@ import static com.google.common.base.Preconditions.checkNotNull
 @CompileStatic
 class RepositoryRule
     extends ExternalResource
-    implements MavenRepoRecipes, RawRepoRecipes, NpmRepoRecipes, PyPiRepoRecipes, AptRepoRecipes, GolangRepoRecipes,
-        CocoapodsRepoRecipes, CondaRepoRecipes
+    implements MavenRepoRecipes, RawRepoRecipes, AptRepoRecipes, GolangRepoRecipes,
+        CocoapodsRepoRecipes, CondaRepoRecipes, RRepoRecipes, P2RepoRecipes
 {
   Provider<RepositoryManager> repositoryManagerProvider
 
@@ -39,8 +40,12 @@ class RepositoryRule
     this.repositoryManagerProvider = checkNotNull(repositoryManagerProvider)
   }
 
+  Iterable<Repository> browse() {
+    return repositoryManagerProvider.get().browse();
+  }
+
   @Override
-  protected void after() {
+  public void after() {
     def repositoryManager = repositoryManagerProvider.get()
     repositories.each { Repository repository ->
       if (repositoryManager.exists(repository.name)) {
@@ -57,9 +62,22 @@ class RepositoryRule
   @Override
   Repository createRepository(final Configuration configuration) {
     log.debug 'Creating and tracking new Repository: {}', configuration.repositoryName
-    Repository repository = repositoryManagerProvider.get().create(configuration)
-    repositories << repository
-    return repository
+
+    boolean baseUrlSet = BaseUrlHolder.isSet()
+
+    try {
+      if (!baseUrlSet) {
+        BaseUrlHolder.set('http://localhost:1234')
+      }
+      Repository repository = repositoryManagerProvider.get().create(configuration)
+      repositories << repository
+      return repository
+    }
+    finally {
+      if (!baseUrlSet) {
+        BaseUrlHolder.unset()
+      }
+    }
   }
 
   /**

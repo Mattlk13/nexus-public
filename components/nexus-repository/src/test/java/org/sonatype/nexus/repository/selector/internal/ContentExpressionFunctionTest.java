@@ -19,8 +19,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 import org.sonatype.nexus.repository.security.VariableResolverAdapterManager;
+import org.sonatype.nexus.repository.storage.AssetVariableResolver;
 import org.sonatype.nexus.selector.OrientSelectorConfiguration;
 import org.sonatype.nexus.selector.SelectorManager;
 import org.sonatype.nexus.selector.VariableSource;
@@ -35,7 +35,7 @@ import org.junit.Test;
 import org.mockito.Mock;
 
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.mock;
@@ -57,7 +57,7 @@ public class ContentExpressionFunctionTest
   VariableSource variableSource;
 
   @Mock
-  VariableResolverAdapter variableResolverAdapter;
+  AssetVariableResolver assetVariableResolver;
 
   @Mock
   VariableResolverAdapterManager variableResolverAdapterManager;
@@ -78,14 +78,14 @@ public class ContentExpressionFunctionTest
   private SelectorManager selectorManager;
 
   @Mock
-  private ContentAuthHelper contentAuthHelper;
+  private OrientContentAuthHelper contentAuthHelper;
 
   ContentExpressionFunction underTest;
 
   @Before
   public void setup() {
-    when(variableResolverAdapterManager.get(FORMAT)).thenReturn(variableResolverAdapter);
-    when(variableResolverAdapter.fromDocument(assetDocument)).thenReturn(variableSource);
+    when(variableResolverAdapterManager.get(FORMAT)).thenReturn(assetVariableResolver);
+    when(assetVariableResolver.fromDocument(assetDocument)).thenReturn(variableSource);
 
     when(bucketDocument.getRecord()).thenReturn(bucketDocument);
     when(bucketDocument.field("repository_name", String.class)).thenReturn(REPOSITORY_NAME);

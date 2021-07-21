@@ -11,10 +11,9 @@
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
 /**
- * @since 3.next
+ * @since 3.21
  */
-@import '../../../../styles/colors';
-
 .nxrm-content-body {
-  padding: 12px;
+  // NxSubmitMask needs a parent with position: relative to mask, fall back to content body if no lower parent was found
+  position: relative;
 }

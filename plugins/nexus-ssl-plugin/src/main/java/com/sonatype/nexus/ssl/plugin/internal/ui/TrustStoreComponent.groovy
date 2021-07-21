@@ -36,8 +36,8 @@ import com.softwarementors.extjs.djn.config.annotations.DirectMethod
 import groovy.transform.PackageScope
 import org.apache.shiro.authz.annotation.RequiresAuthentication
 import org.apache.shiro.authz.annotation.RequiresPermissions
-import org.hibernate.validator.constraints.NotBlank
-import org.hibernate.validator.constraints.NotEmpty
+import javax.validation.constraints.NotBlank
+import javax.validation.constraints.NotEmpty
 
 import static org.sonatype.nexus.ssl.CertificateUtil.calculateFingerprint
 
@@ -108,7 +108,7 @@ extends DirectComponentSupport
       X509Certificate x509Certificate = (X509Certificate) certificate
 
       Map<String, String> subjectRdns = CertificateUtil.getSubjectRdns(x509Certificate)
-      Map<String, String> issuerRdns = CertificateUtil.getSubjectRdns(x509Certificate)
+      Map<String, String> issuerRdns = CertificateUtil.getIssuerRdns(x509Certificate)
 
       return new CertificateXO(
           id: fingerprint,

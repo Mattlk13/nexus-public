@@ -14,20 +14,18 @@ package org.sonatype.nexus.repository.apt.internal;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.function.Supplier;
 
-import org.sonatype.nexus.blobstore.api.Blob;
+import org.sonatype.nexus.common.io.InputStreamSupplier;
 import org.sonatype.nexus.repository.apt.internal.debian.ControlFile;
 import org.sonatype.nexus.repository.apt.internal.debian.ControlFileParser;
+import org.sonatype.nexus.repository.apt.internal.debian.PackageInfo;
+import org.sonatype.nexus.repository.apt.internal.org.apache.commons.compress.archivers.ar.ArArchiveInputStream;
 
 import org.apache.commons.compress.archivers.ArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream;
 import org.apache.commons.io.input.CloseShieldInputStream;
-// NOTE: replace with commons-compress ArArchiveInputStream once fixes to end of stream detection are
-// available in a public release.
-import org.sonatype.nexus.repository.apt.internal.org.apache.commons.compress.archivers.ar.ArArchiveInputStream;
 
 /**
  * @since 3.17
@@ -38,7 +36,15 @@ public class AptPackageParser
     throw new IllegalAccessError("Utility class");
   }
 
-  public static ControlFile parsePackage(final Supplier<InputStream> supplier) throws IOException {
+  public static PackageInfo parsePackageInfo(final InputStreamSupplier supplier) throws IOException {
+    ControlFile controlFile = parsePackageInternal(supplier);
+    if (controlFile == null) {
+      throw new IOException("Invalid debian package: no control file");
+    }
+    return new PackageInfo(controlFile);
+  }
+
+  private static ControlFile parsePackageInternal(final InputStreamSupplier supplier) throws IOException {
     try (ArArchiveInputStream is = new ArArchiveInputStream(supplier.get())) {
       ControlFile control = null;
       ArchiveEntry debEntry;
@@ -69,15 +75,5 @@ public class AptPackageParser
       }
       return control;
     }
-  }
-
-  public static ControlFile getDebControlFile(final Blob blob)
-      throws IOException
-  {
-    final ControlFile controlFile = AptPackageParser.parsePackage(() -> blob.getInputStream());
-    if (controlFile == null) {
-      throw new IOException("Invalid debian package: no control file");
-    }
-    return controlFile;
   }
 }

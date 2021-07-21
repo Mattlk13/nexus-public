@@ -13,7 +13,7 @@
 package org.sonatype.nexus.coreui
 
 import groovy.transform.ToString
-import org.hibernate.validator.constraints.NotBlank
+import javax.validation.constraints.NotBlank
 
 /**
  * BlobStore Type exchange object.
@@ -36,4 +36,6 @@ class BlobStoreTypeXO
   boolean isModifiable
 
   boolean isEnabled
+
+  boolean isConnectionTestable
 }

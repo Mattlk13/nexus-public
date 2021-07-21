@@ -15,7 +15,7 @@ package org.sonatype.nexus.repository.maven.api;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.annotations.ApiModelProperty;
-import org.hibernate.validator.constraints.NotEmpty;
+import javax.validation.constraints.NotEmpty;
 
 /**
  * REST API model for describing maven specific repository properties.
@@ -25,14 +25,14 @@ import org.hibernate.validator.constraints.NotEmpty;
 public class MavenAttributes
 {
   @ApiModelProperty(value = "What type of artifacts does this repository store?",
-      allowableValues = "release,snapshot,mixed",
-      example = "mixed")
+      allowableValues = "RELEASE,SNAPSHOT,MIXED",
+      example = "MIXED")
   @NotEmpty
   protected final String versionPolicy;
 
   @ApiModelProperty(value = "Validate that all paths are maven artifact or metadata paths",
-      allowableValues = "strict,permissive",
-      example = "strict")
+      allowableValues = "STRICT,PERMISSIVE",
+      example = "STRICT")
   @NotEmpty
   protected final String layoutPolicy;
 

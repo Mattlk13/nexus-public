@@ -70,16 +70,20 @@ public class UserManagerImpl
 
   private final PasswordService passwordService;
 
+  private final PasswordValidator passwordValidator;
+
   @Inject
   public UserManagerImpl(final EventManager eventManager,
                          final SecurityConfigurationManager configuration,
                          final SecuritySystem securitySystem,
-                         final PasswordService passwordService)
+                         final PasswordService passwordService,
+                         final PasswordValidator passwordValidator)
   {
     this.eventManager = checkNotNull(eventManager);
     this.configuration = configuration;
     this.securitySystem = securitySystem;
     this.passwordService = passwordService;
+    this.passwordValidator = passwordValidator;
   }
 
   protected CUser toUser(User user) {
@@ -127,7 +131,7 @@ public class UserManagerImpl
     return user;
   }
 
-  protected RoleIdentifier toRole(String roleId) {
+  protected RoleIdentifier toRole(final String roleId, final String source) {
     if (roleId == null) {
       return null;
     }
@@ -135,7 +139,7 @@ public class UserManagerImpl
     try {
       CRole role = configuration.readRole(roleId);
 
-      return new RoleIdentifier(DEFAULT_SOURCE, role.getId());
+      return new RoleIdentifier(source, role.getId());
     }
     catch (NoSuchRoleException e) {
       return null;
@@ -235,7 +239,7 @@ public class UserManagerImpl
       CUserRoleMapping roleMapping = configuration.readUserRoleMapping(userId, source);
       if (roleMapping != null) {
         for (String roleId : roleMapping.getRoles()) {
-          RoleIdentifier role = toRole(roleId);
+          RoleIdentifier role = toRole(roleId, DEFAULT_SOURCE);
           if (role != null) {
             roles.add(role);
           }
@@ -287,6 +291,7 @@ public class UserManagerImpl
   }
 
   private String hashPassword(String clearPassword) {
+    passwordValidator.validate(clearPassword);
     // set the password if its not null
     if (clearPassword != null && clearPassword.trim().length() > 0) {
       return this.passwordService.encryptPassword(clearPassword);

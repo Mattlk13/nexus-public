@@ -20,12 +20,13 @@ import java.util.Map;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.collect.AttributesMap;
 import org.sonatype.nexus.common.hash.HashAlgorithm;
+import org.sonatype.nexus.orient.maven.OrientMavenFacet;
 import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.maven.MavenFacet;
 import org.sonatype.nexus.repository.maven.MavenPath;
 import org.sonatype.nexus.repository.maven.MavenPath.HashType;
 import org.sonatype.nexus.repository.maven.internal.Maven2MavenPathParser;
 import org.sonatype.nexus.repository.maven.internal.hosted.metadata.Maven2Metadata.Plugin;
+import org.sonatype.nexus.repository.maven.internal.orient.OrientMetadataUpdater;
 import org.sonatype.nexus.repository.storage.StorageTx;
 import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.Payload;
@@ -46,7 +47,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * UT for {@link MetadataUpdater}
+ * UT for {@link AbstractMetadataUpdater}
  *
  * @since 3.0
  */
@@ -57,7 +58,7 @@ public class MetadataUpdaterTest
   private Repository repository;
 
   @Mock
-  private MavenFacet mavenFacet;
+  private OrientMavenFacet mavenFacet;
 
   @Mock
   private Content content;
@@ -70,12 +71,14 @@ public class MetadataUpdaterTest
 
   private final Map<HashAlgorithm, HashCode> hashes = ImmutableMap.of(
       HashAlgorithm.SHA1, HashAlgorithm.SHA1.function().hashString("sha1", StandardCharsets.UTF_8),
+      HashAlgorithm.SHA256, HashAlgorithm.SHA256.function().hashString("sha256", StandardCharsets.UTF_8),
+      HashAlgorithm.SHA512, HashAlgorithm.SHA512.function().hashString("sha512", StandardCharsets.UTF_8),
       HashAlgorithm.MD5, HashAlgorithm.MD5.function().hashString("md5", StandardCharsets.UTF_8)
   );
 
   private final MavenPath mavenPath = new Maven2MavenPathParser().parsePath("/foo/bar");
 
-  private MetadataUpdater testSubject;
+  private AbstractMetadataUpdater testSubject;
 
   @Before
   public void prepare() {
@@ -83,8 +86,8 @@ public class MetadataUpdaterTest
     when(content.getAttributes()).thenReturn(contentAttributes);
 
     when(repository.getName()).thenReturn("name");
-    when(repository.facet(eq(MavenFacet.class))).thenReturn(mavenFacet);
-    this.testSubject = new MetadataUpdater(true, repository);
+    when(repository.facet(eq(OrientMavenFacet.class))).thenReturn(mavenFacet);
+    this.testSubject = new OrientMetadataUpdater(true, repository);
   }
 
   @Test
@@ -177,6 +180,7 @@ public class MetadataUpdaterTest
     verify(mavenFacet, times(0)).get(eq(mavenPath));
     verify(mavenFacet, times(0)).put(eq(mavenPath), any(Payload.class));
     verify(mavenFacet, times(1))
-        .delete(eq(mavenPath), eq(mavenPath.hash(HashType.SHA1)), eq(mavenPath.hash(HashType.MD5)));
+        .delete(eq(mavenPath), eq(mavenPath.hash(HashType.SHA1)), eq(mavenPath.hash(HashType.SHA256)),
+            eq(mavenPath.hash(HashType.SHA512)), eq(mavenPath.hash(HashType.MD5)));
   }
 }

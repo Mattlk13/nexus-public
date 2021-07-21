@@ -29,15 +29,16 @@ import org.sonatype.goodies.common.Loggers;
 import org.sonatype.goodies.testsupport.TestIndex;
 import org.sonatype.goodies.testsupport.junit.TestDataRule;
 import org.sonatype.goodies.testsupport.junit.TestIndexRule;
-import org.sonatype.goodies.testsupport.port.PortRegistry;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.event.EventManager;
+import org.sonatype.nexus.common.net.PortAllocator;
+import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.scheduling.TaskScheduler;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Throwables;
-import com.google.common.collect.Range;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.rules.ExpectedException;
@@ -55,6 +56,10 @@ import org.ops4j.pax.exam.options.ProvisionOption;
 import org.ops4j.pax.exam.spi.reactors.ExamReactorStrategy;
 import org.ops4j.pax.exam.spi.reactors.PerClass;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
+import org.testcontainers.containers.wait.strategy.Wait;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.ops4j.pax.exam.CoreOptions.composite;
@@ -66,7 +71,11 @@ import static org.ops4j.pax.exam.CoreOptions.systemTimeout;
 import static org.ops4j.pax.exam.CoreOptions.vmOption;
 import static org.ops4j.pax.exam.CoreOptions.when;
 import static org.ops4j.pax.exam.CoreOptions.wrappedBundle;
+import static org.ops4j.pax.exam.OptionUtils.combine;
 import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.*;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
+import static org.sonatype.nexus.common.app.FeatureFlags.ORIENT_ENABLED;
+import static org.testcontainers.containers.BindMode.READ_ONLY;
 
 /**
  * Provides support for testing Nexus with Pax-Exam, test-cases can inject any component from the distribution. <br>
@@ -103,6 +112,8 @@ public abstract class NexusPaxExamSupport
 
   public static final String NEXUS_PROPERTIES_FILE = "etc/nexus-default.properties";
 
+  public static final String DATA_STORE_PROPERTIES_FILE = "etc/fabric/nexus-store.properties";
+
   public static final String KARAF_CONFIG_PROPERTIES_FILE = "etc/karaf/config.properties";
 
   public static final String SYSTEM_PROPERTIES_FILE = "etc/karaf/system.properties";
@@ -111,19 +122,9 @@ public abstract class NexusPaxExamSupport
 
   public static final String KARAF_MANAGEMENT_FILE = "etc/karaf/org.apache.karaf.management.cfg";
 
-  private static final String PORT_REGISTRY_MIN_KEY = "it.portRegistry.min";
+  public static String TEST_JDBC_URL_PROPERTY = "nexus.test.jdbcUrl";
 
-  private static final String PORT_REGISTRY_MAX_KEY = "it.portRegistry.max";
-
-  // port range 10000-30000 chosen to not overlap with typical range for ephemeral ports
-
-  private static final int PORT_REGISTRY_MIN_MAIN = 10000;
-
-  private static final int PORT_REGISTRY_MAX_MAIN = 24999;
-
-  private static final int PORT_REGISTRY_MIN_FORK = PORT_REGISTRY_MAX_MAIN + 1;
-
-  private static final int PORT_REGISTRY_MAX_FORK = 30000;
+  private static final String DATABASE_KEY = "it.database";
 
   // -------------------------------------------------------------------------
 
@@ -139,8 +140,6 @@ public abstract class NexusPaxExamSupport
 
   @Rule
   public final ExpectedException thrown = ExpectedException.none();
-
-  public static final PortRegistry portRegistry = createPortRegistry();
 
   @Inject
   @Named("http://localhost:${application-port}${nexus-context-path}")
@@ -159,16 +158,25 @@ public abstract class NexusPaxExamSupport
   @Inject
   protected TaskScheduler taskScheduler;
 
+  @Inject
+  @Named(ORIENT_ENABLED)
+  private Boolean orientEnabled;
+
+  //11.9 is the minimum support version
+  private static final String POSTGRES_IMAGE = "docker-all.repo.sonatype.com/postgres:11.9";
+
+  private static final int POSTGRES_PORT = 5432;
+
+  public static final String DB_USER = "nxrmUser";
+
+  public static final String DB_PASSWORD = "nxrmPassword";
+
+  private static GenericContainer postgresContainer = null;
+
   protected final Logger log = checkNotNull(createLogger());
 
   protected Logger createLogger() {
     return Loggers.getLogger(this);
-  }
-
-  private static PortRegistry createPortRegistry() {
-    int portMin = Integer.getInteger(PORT_REGISTRY_MIN_KEY, PORT_REGISTRY_MIN_MAIN);
-    int portMax = Integer.getInteger(PORT_REGISTRY_MAX_KEY, PORT_REGISTRY_MAX_MAIN);
-    return new PortRegistry(portMin, portMax, 60 * 1000);
   }
 
   // -------------------------------------------------------------------------
@@ -235,7 +243,10 @@ public abstract class NexusPaxExamSupport
    *
    * @throws InterruptedException if the thread is interrupted
    * @throws TimeoutException if the timeout exceeded
+   *
+   * @deprecated use the Awaitility.await() helper instead of this method
    */
+  @Deprecated
   public static void waitFor(final Callable<Boolean> function) // NOSONAR
       throws InterruptedException, TimeoutException
   {
@@ -247,7 +258,10 @@ public abstract class NexusPaxExamSupport
    *
    * @throws InterruptedException if the thread is interrupted
    * @throws TimeoutException if the timeout exceeded
+   *
+   * @deprecated use the Awaitility.await() helper instead of this method
    */
+  @Deprecated
   public static void waitFor(final Callable<Boolean> function, final long millis) // NOSONAR
       throws InterruptedException, TimeoutException
   {
@@ -313,8 +327,15 @@ public abstract class NexusPaxExamSupport
   /**
    * @return Function that returns {@code true} when all tasks have stopped; otherwise {@code false}
    */
+  public static Callable<Boolean> tasksDone(TaskScheduler taskScheduler, int initialTaskCount) {
+    return () -> taskScheduler.getExecutedTaskCount() > initialTaskCount && taskScheduler.getRunningTaskCount() == 0;
+  }
+
+  /**
+   * @return Function that returns {@code true} when all tasks have stopped; otherwise {@code false}
+   */
   public static Callable<Boolean> tasksDone(TaskScheduler taskScheduler) {
-    return () -> taskScheduler.getExecutedTaskCount() > 0 && taskScheduler.getRunningTaskCount() == 0;
+    return tasksDone(taskScheduler, 0);
   }
 
   // -------------------------------------------------------------------------
@@ -345,14 +366,14 @@ public abstract class NexusPaxExamSupport
   public static Option nexusDistribution(final MavenUrlReference frameworkZip) {
 
     // support explicit CI setting as well as automatic detection
-    String localRepo = System.getProperty("maven.repo.local", "");
-    if (localRepo.length() > 0) {
+    String localRepository = System.getProperty("maven.repo.local", System.getProperty("localRepository", ""));
+    if (localRepository.length() > 0) {
       // pass on explicit setting to Pax-URL (otherwise it uses wrong value)
-      System.setProperty("org.ops4j.pax.url.mvn.localRepository", localRepo);
+      System.setProperty("org.ops4j.pax.url.mvn.localRepository", localRepository);
     }
     else {
       // use placeholder in karaf config
-      localRepo = "${maven.repo.local}";
+      localRepository = "${maven.repo.local}";
     }
 
     // allow overriding the distribution under test from the command-line
@@ -375,9 +396,6 @@ public abstract class NexusPaxExamSupport
     // allow overriding of the out-of-the-box logback configuration
     File logbackXml = resolveBaseFile("target/test-classes/logback-test.xml");
     String logLevel = System.getProperty("it.test.log.level", "INFO");
-
-    // block ports which might be taken by Pax-Exam RMI
-    portRegistry.blockPorts(Range.closed(21000, 21099));
 
     return composite(
 
@@ -421,8 +439,14 @@ public abstract class NexusPaxExamSupport
 
         keepRuntimeFolder(), // keep files around in case we need to debug
 
+        // enable testing of plugin snapshots from the local repository
+        systemProperty("nexus.testLocalSnapshots").value("true"),
+
+        propagateSystemProperty("maven.repo.local"),
+        propagateSystemProperty("localRepository"),
+
         editConfigurationFilePut(PAX_URL_MAVEN_FILE, // so we can fetch local snapshots
-            "org.ops4j.pax.url.mvn.localRepository", localRepo),
+            "org.ops4j.pax.url.mvn.localRepository", localRepository),
 
         useOwnKarafExamSystemConfiguration("nexus"),
 
@@ -441,20 +465,69 @@ public abstract class NexusPaxExamSupport
         editConfigurationFilePut(KARAF_CONFIG_PROPERTIES_FILE, //
             "karaf.shutdown.port", "-1"),
 
-        // configure port registry of forked JVM to use a different port range than main JVM driving the test
-        systemProperty(PORT_REGISTRY_MIN_KEY).value(Integer.toString(PORT_REGISTRY_MIN_FORK)),
-        systemProperty(PORT_REGISTRY_MAX_KEY).value(Integer.toString(PORT_REGISTRY_MAX_FORK)),
+        //configure db, including starting external resources
+        when(getValidTestDatabase().isUseContentStore()).useOptions(
+            configureDatabase()
+        ),
 
         // randomize ports...
         editConfigurationFilePut(NEXUS_PROPERTIES_FILE, //
-            "application-port", Integer.toString(portRegistry.reservePort())),
+            "application-port", Integer.toString(PortAllocator.nextFreePort())),
         editConfigurationFilePut(NEXUS_PROPERTIES_FILE, //
-            "application-port-ssl", Integer.toString(portRegistry.reservePort())),
+            "application-port-ssl", Integer.toString(PortAllocator.nextFreePort())),
         editConfigurationFilePut(KARAF_MANAGEMENT_FILE, //
-            "rmiRegistryPort", Integer.toString(portRegistry.reservePort())),
+            "rmiRegistryPort", Integer.toString(PortAllocator.nextFreePort())),
         editConfigurationFilePut(KARAF_MANAGEMENT_FILE, //
-            "rmiServerPort", Integer.toString(portRegistry.reservePort()))
+            "rmiServerPort", Integer.toString(PortAllocator.nextFreePort()))
     );
+  }
+
+  protected static Option[] configureDatabase() {
+    switch (getValidTestDatabase()) {
+      case POSTGRES:
+        postgresContainer = new GenericContainer(POSTGRES_IMAGE) //NOSONAR
+          .withExposedPorts(POSTGRES_PORT)
+          .withEnv("POSTGRES_USER", DB_USER)
+          .withEnv("POSTGRES_PASSWORD", DB_PASSWORD)
+          .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger(NexusPaxExamSupport.class)))
+          .withClasspathResourceMapping("initialize-postgres.sql", "/docker-entrypoint-initdb.d/initialize-postgres.sql", READ_ONLY)
+          .waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*", 1));
+
+        return combine(null,
+            editConfigurationFilePut(NEXUS_PROPERTIES_FILE, DATASTORE_ENABLED, "true"),
+            editConfigurationFilePut(NEXUS_PROPERTIES_FILE, "nexus.datastore.nexus.name", "nexus"),
+            editConfigurationFilePut(NEXUS_PROPERTIES_FILE, "nexus.datastore.nexus.type", "jdbc"),
+            editConfigurationFilePut(NEXUS_PROPERTIES_FILE, "nexus.datastore.nexus.jdbcUrl", configurePostgres()),
+            editConfigurationFilePut(NEXUS_PROPERTIES_FILE, "nexus.datastore.nexus.username", DB_USER),
+            editConfigurationFilePut(NEXUS_PROPERTIES_FILE, "nexus.datastore.nexus.password", DB_PASSWORD),
+            systemProperty(TEST_JDBC_URL_PROPERTY).value(configurePostgres())
+        );
+      case H2:
+        return combine(null,
+            editConfigurationFilePut(NEXUS_PROPERTIES_FILE, DATASTORE_ENABLED, "true")
+        );
+      case ORIENT:
+        return new Option[0];
+      default:
+        throw new IllegalStateException("No case defined for " + getValidTestDatabase());
+    }
+  }
+
+  private static String configurePostgres() {
+    if (!postgresContainer.isRunning()) {
+      postgresContainer.start();
+    }
+
+    return String.format("jdbc:postgresql://%s:%d/",
+        postgresContainer.getHost(),
+        postgresContainer.getMappedPort(POSTGRES_PORT));
+  }
+
+  @AfterClass
+  public static final void shutdownPostgres() {
+    if(postgresContainer != null && postgresContainer.isRunning()) {
+      postgresContainer.stop();
+    }
   }
 
   /**
@@ -477,7 +550,8 @@ public abstract class NexusPaxExamSupport
    * @return Pax-Exam option to change the Nexus edition based on groupId and artifactId
    */
   public static Option nexusEdition(final String groupId, final String artifactId) {
-    return nexusEdition(maven(groupId, artifactId).versionAsInProject().classifier("features").type("xml"), artifactId);
+    return nexusEdition(maven(groupId, artifactId).versionAsInProject().classifier("features").type("xml"),
+        artifactId + '/' + MavenUtils.getArtifactVersion(groupId, artifactId));
   }
 
   /**
@@ -491,7 +565,8 @@ public abstract class NexusPaxExamSupport
    * @return Pax-Exam option to install a Nexus plugin based on groupId and artifactId
    */
   public static Option nexusFeature(final String groupId, final String artifactId) {
-    return nexusFeature(maven(groupId, artifactId).versionAsInProject().classifier("features").type("xml"), artifactId);
+    return nexusFeature(maven(groupId, artifactId).versionAsInProject().classifier("features").type("xml"),
+        artifactId + '/' + MavenUtils.getArtifactVersion(groupId, artifactId));
   }
 
   /**
@@ -539,7 +614,7 @@ public abstract class NexusPaxExamSupport
    * Processes two sequences of options and combines them into a single sequence.
    */
   public static Option[] options(final Option[] options1, final Option... options2) {
-    return options(OptionUtils.combine(options1, options2));
+    return options(combine(options1, options2));
   }
 
   // -------------------------------------------------------------------------
@@ -570,6 +645,23 @@ public abstract class NexusPaxExamSupport
     captureLogs(testIndex, resolveWorkFile("log"), getClass().getName());
 
     testCleaner.cleanOnSuccess(applicationDirectories.getInstallDirectory());
+  }
+
+  /**
+   * Get the database type to use for the test instance, based on system property.
+   * Defaults to Orient.
+   */
+  public static TestDatabase getValidTestDatabase() {
+    try {
+      return TestDatabase.valueOf(Strings2.upper(System.getProperty(DATABASE_KEY)));
+    } catch (Exception e){
+      //fallback to ORIENT if it is invalid
+      return TestDatabase.ORIENT;
+    }
+  }
+
+  protected boolean isNewDb() {
+    return !orientEnabled;
   }
 
   // -------------------------------------------------------------------------

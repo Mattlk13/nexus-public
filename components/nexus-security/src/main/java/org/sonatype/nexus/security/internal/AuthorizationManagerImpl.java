@@ -21,6 +21,7 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.security.authz.AuthorizationConfigurationChanged;
 import org.sonatype.nexus.security.authz.AuthorizationManager;
@@ -43,16 +44,19 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static  org.sonatype.nexus.security.internal.DefaultRealmConstants.DEFAULT_USER_SOURCE;
+import static  org.sonatype.nexus.security.internal.DefaultRealmConstants.DEFAULT_REALM_NAME;
 
 /**
  * Default {@link AuthorizationManager}.
  */
-@Named("default")
+@Named(DEFAULT_USER_SOURCE)
 @Singleton
 public class AuthorizationManagerImpl
+    extends ComponentSupport
     implements AuthorizationManager
 {
-  public static final String SOURCE = "default";
+  public static final String SOURCE = DEFAULT_USER_SOURCE;
 
   private final SecurityConfigurationManager configuration;
 
@@ -72,7 +76,12 @@ public class AuthorizationManagerImpl
 
   @Override
   public String getSource() {
-    return SOURCE;
+    return DEFAULT_USER_SOURCE;
+  }
+
+  @Override
+  public String getRealmName() {
+    return DEFAULT_REALM_NAME;
   }
 
   private Role convert(final CRole source) {
@@ -80,7 +89,7 @@ public class AuthorizationManagerImpl
     target.setRoleId(source.getId());
     target.setVersion(source.getVersion());
     target.setName(source.getName());
-    target.setSource(SOURCE);
+    target.setSource(DEFAULT_USER_SOURCE);
     target.setDescription(source.getDescription());
     target.setReadOnly(source.isReadOnly());
     target.setPrivileges(Sets.newHashSet(source.getPrivileges()));
@@ -186,6 +195,7 @@ public class AuthorizationManagerImpl
 
     configuration.createRole(secRole);
 
+    log.info("Added role {}", role.getName());
     eventManager.post(new RoleCreatedEvent(role));
 
     // notify any listeners that the config changed
@@ -213,6 +223,7 @@ public class AuthorizationManagerImpl
     Role role = getRole(roleId);
     configuration.deleteRole(roleId);
 
+    log.info("Removed role {}", role.getName());
     eventManager.post(new RoleDeletedEvent(role));
 
     // notify any listeners that the config changed
@@ -245,6 +256,7 @@ public class AuthorizationManagerImpl
     final CPrivilege secPriv = this.convert(privilege);
     configuration.createPrivilege(secPriv);
 
+    log.info("Added privilege {}", privilege.getName());
     eventManager.post(new PrivilegeCreatedEvent(privilege));
 
     // notify any listeners that the config changed
@@ -272,6 +284,7 @@ public class AuthorizationManagerImpl
     Privilege privilege = getPrivilege(privilegeId);
     configuration.deletePrivilege(privilegeId);
 
+    log.info("Removed privilege {}", privilege.getName());
     eventManager.post(new PrivilegeDeletedEvent(privilege));
 
     // notify any listeners that the config changed

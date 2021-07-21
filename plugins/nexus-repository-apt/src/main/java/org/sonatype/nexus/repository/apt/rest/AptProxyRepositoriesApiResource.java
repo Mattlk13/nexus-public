@@ -12,19 +12,19 @@
  */
 package org.sonatype.nexus.repository.apt.rest;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import javax.ws.rs.BeanParam;
+import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.core.Response;
 
-import org.sonatype.nexus.repository.rest.api.AbstractRepositoriesApiResource;
-import org.sonatype.nexus.repository.rest.api.AbstractRepositoryApiRequestToConfigurationConverter;
-import org.sonatype.nexus.repository.rest.api.AuthorizingRepositoryManager;
-import org.sonatype.nexus.repository.rest.api.RepositoriesApiResource;
+import org.sonatype.nexus.repository.apt.api.AptProxyApiRepository;
+import org.sonatype.nexus.repository.apt.AptFormat;
+import org.sonatype.nexus.repository.rest.api.AbstractProxyRepositoriesApiResource;
+import org.sonatype.nexus.repository.rest.api.FormatAndType;
+import org.sonatype.nexus.repository.rest.api.model.AbstractApiRepository;
 import org.sonatype.nexus.validation.Validate;
 
 import io.swagger.annotations.Api;
@@ -36,6 +36,7 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 
 import static org.sonatype.nexus.rest.ApiDocConstants.API_REPOSITORY_MANAGEMENT;
 import static org.sonatype.nexus.rest.ApiDocConstants.AUTHENTICATION_REQUIRED;
+import static org.sonatype.nexus.rest.ApiDocConstants.DISABLED_IN_HIGH_AVAILABILITY;
 import static org.sonatype.nexus.rest.ApiDocConstants.INSUFFICIENT_PERMISSIONS;
 import static org.sonatype.nexus.rest.ApiDocConstants.REPOSITORY_CREATED;
 import static org.sonatype.nexus.rest.ApiDocConstants.REPOSITORY_NOT_FOUND;
@@ -45,27 +46,15 @@ import static org.sonatype.nexus.rest.ApiDocConstants.REPOSITORY_UPDATED;
  * @since 3.20
  */
 @Api(value = API_REPOSITORY_MANAGEMENT)
-@Named
-@Singleton
-@Path(AptProxyRepositoriesApiResource.RESOURCE_URI)
-public class AptProxyRepositoriesApiResource
-    extends AbstractRepositoriesApiResource<AptProxyRepositoryApiRequest>
+public abstract class AptProxyRepositoriesApiResource
+    extends AbstractProxyRepositoriesApiResource<AptProxyRepositoryApiRequest>
 {
-  public static final String RESOURCE_URI = RepositoriesApiResource.RESOURCE_URI + "/apt/proxy";
-
-  @Inject
-  public AptProxyRepositoriesApiResource(
-      final AuthorizingRepositoryManager authorizingRepositoryManager,
-      final AbstractRepositoryApiRequestToConfigurationConverter<AptProxyRepositoryApiRequest> configurationAdapter)
-  {
-    super(authorizingRepositoryManager, configurationAdapter);
-  }
-
   @ApiOperation("Create APT proxy repository")
   @ApiResponses(value = {
       @ApiResponse(code = 201, message = REPOSITORY_CREATED),
       @ApiResponse(code = 401, message = AUTHENTICATION_REQUIRED),
-      @ApiResponse(code = 403, message = INSUFFICIENT_PERMISSIONS)
+      @ApiResponse(code = 403, message = INSUFFICIENT_PERMISSIONS),
+      @ApiResponse(code = 405, message = DISABLED_IN_HIGH_AVAILABILITY)
   })
   @POST
   @RequiresAuthentication
@@ -92,5 +81,21 @@ public class AptProxyRepositoriesApiResource
       @ApiParam(value = "Name of the repository to update") @PathParam("repositoryName") final String repositoryName)
   {
     return super.updateRepository(request, repositoryName);
+  }
+
+  @GET
+  @Path("/{repositoryName}")
+  @RequiresAuthentication
+  @Validate
+  @ApiOperation(value = "Get repository", response = AptProxyApiRepository.class)
+  @Override
+  public AbstractApiRepository getRepository(@ApiParam(hidden = true) @BeanParam final FormatAndType formatAndType,
+                                             @PathParam("repositoryName") final String repositoryName) {
+    return super.getRepository(formatAndType, repositoryName);
+  }
+
+  @Override
+  public boolean isApiEnabled() {
+    return highAvailabilitySupportChecker.isSupported(AptFormat.NAME);
   }
 }

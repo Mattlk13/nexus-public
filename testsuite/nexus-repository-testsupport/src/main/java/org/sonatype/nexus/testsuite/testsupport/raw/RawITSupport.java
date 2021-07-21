@@ -14,19 +14,16 @@ package org.sonatype.nexus.testsuite.testsupport.raw;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 
 import javax.inject.Inject;
 
 import org.sonatype.nexus.common.log.LogManager;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.http.HttpStatus;
-import org.sonatype.nexus.repository.raw.RawContentFacet;
-import org.sonatype.nexus.repository.storage.StorageFacet;
 import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.testsuite.testsupport.RepositoryITSupport;
-import org.sonatype.nexus.transaction.UnitOfWork;
 
-import com.google.common.io.Files;
 import org.apache.http.entity.ContentType;
 import org.junit.experimental.categories.Category;
 
@@ -47,19 +44,15 @@ public class RawITSupport
   @Inject
   protected LogManager logManager;
 
+  @Inject
+  protected RawTestHelper rawTestHelper;
+
   public RawITSupport() {
     testData.addDirectory(resolveBaseFile("target/it-resources/raw"));
   }
 
   protected Content read(final Repository repository, final String path) throws IOException {
-    RawContentFacet rawFacet = repository.facet(RawContentFacet.class);
-    UnitOfWork.begin(repository.facet(StorageFacet.class).txSupplier());
-    try {
-      return rawFacet.get(path);
-    }
-    finally {
-      UnitOfWork.end();
-    }
+    return rawTestHelper.read(repository, path);
   }
 
   protected void assertReadable(final Repository repository, final String... paths) throws IOException {
@@ -74,12 +67,12 @@ public class RawITSupport
     }
   }
 
-  protected void uploadAndDownload(RawClient rawClient, String file) throws Exception {
+  protected void uploadAndDownload(final RawClient rawClient, final String file) throws Exception {
     final File testFile = resolveTestFile(file);
     final int response = rawClient.put(file, ContentType.TEXT_PLAIN, testFile);
     assertThat(response, is(HttpStatus.CREATED));
 
-    assertThat(bytes(rawClient.get(file)), is(Files.toByteArray(testFile)));
+    assertThat(bytes(rawClient.get(file)), is(Files.readAllBytes(testFile.toPath())));
 
     assertThat(status(rawClient.delete(file)), is(HttpStatus.NO_CONTENT));
 

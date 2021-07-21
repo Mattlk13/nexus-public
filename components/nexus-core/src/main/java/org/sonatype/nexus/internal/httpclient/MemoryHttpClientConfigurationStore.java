@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.httpclient;
 
 import javax.annotation.Nullable;
+import javax.annotation.Priority;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import javax.validation.Valid;
@@ -24,6 +25,7 @@ import org.sonatype.nexus.httpclient.config.HttpClientConfiguration;
 import org.sonatype.nexus.httpclient.config.ProxyConfiguration;
 
 import com.google.common.annotations.VisibleForTesting;
+import org.apache.http.client.AuthenticationStrategy;
 import org.apache.http.client.RedirectStrategy;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -35,6 +37,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 @Named("memory")
 @Singleton
+@Priority(Integer.MIN_VALUE)
 @VisibleForTesting
 public class MemoryHttpClientConfigurationStore
     extends ComponentSupport
@@ -85,6 +88,18 @@ public class MemoryHttpClientConfigurationStore
     @Nullable
     private AuthenticationConfiguration authentication;
 
+    @Valid
+    @Nullable
+    private AuthenticationStrategy authenticationStrategy;
+
+    @Valid
+    @Nullable
+    private Boolean shouldNormalizeUri;
+
+    @Valid
+    @Nullable
+    private Boolean disableContentCompression;
+
     @Nullable
     public ConnectionConfiguration getConnection() {
       return connection;
@@ -121,6 +136,39 @@ public class MemoryHttpClientConfigurationStore
       this.redirectStrategy = redirectStrategy;
     }
 
+    @Nullable
+    @Override
+    public AuthenticationStrategy getAuthenticationStrategy() {
+      return authenticationStrategy;
+    }
+
+    @Override
+    public void setAuthenticationStrategy(
+        @Nullable final AuthenticationStrategy authenticationStrategy)
+    {
+      this.authenticationStrategy = authenticationStrategy;
+    }
+
+    @Override
+    public Boolean getNormalizeUri() {
+      return shouldNormalizeUri;
+    }
+
+    @Override
+    public void setNormalizeUri(final Boolean normalizeUri) {
+      this.shouldNormalizeUri = normalizeUri;
+    }
+
+    @Override
+    public Boolean getDisableContentCompression() {
+      return disableContentCompression;
+    }
+
+    @Override
+    public void setDisableContentCompression(final Boolean disableContentCompression) {
+      this.disableContentCompression = disableContentCompression;
+    }
+
     public MemoryHttpClientConfiguration copy() {
       try {
         MemoryHttpClientConfiguration copy = (MemoryHttpClientConfiguration) clone();
@@ -137,6 +185,8 @@ public class MemoryHttpClientConfigurationStore
           // no real cloning/copying needed, as we are allowed to use a singleton instance
           copy.redirectStrategy = redirectStrategy;
         }
+        copy.shouldNormalizeUri = shouldNormalizeUri;
+        copy.disableContentCompression = disableContentCompression;
         return copy;
       }
       catch (CloneNotSupportedException e) {

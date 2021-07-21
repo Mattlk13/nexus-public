@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -34,75 +38,108 @@ Ext.define('NX.coreui.util.RepositoryUrls', {
    * @private
    */
   repositoryUrlStrategies: {
-    maven2: function (assetModel) {
-        var repositoryName = assetModel.get('repositoryName'),
-            assetName = assetModel.get('name');
-        return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
-    },
-    apt: function (assetModel) {
+    maven2: function (me, assetModel) {
       var repositoryName = assetModel.get('repositoryName'),
-          assetName = assetModel.get('name');
+          assetName = me.getAssetName(assetModel);
       return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
     },
-    cocoapods: function (assetModel) {
+    apt: function (me, assetModel) {
       var repositoryName = assetModel.get('repositoryName'),
-          assetName = assetModel.get('name');
+          assetName = me.getAssetName(assetModel);
       return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
     },
-    conda: function(assetModel) {
-      var repositoryName = assetModel.get('repositoryName'), assetName = assetModel.get('name');
-      return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + repositoryName + '/' + assetName, assetName);
-    },
-    npm: function (assetModel) {
+    cocoapods: function (me, assetModel) {
       var repositoryName = assetModel.get('repositoryName'),
-          assetName = assetModel.get('name');
+          assetName = me.getAssetName(assetModel);
       return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
     },
-    nuget: function (assetModel) {
+    conan: function (me, assetModel) {
       var repositoryName = assetModel.get('repositoryName'),
-          assetName = assetModel.get('name');
+          assetName = me.getAssetName(assetModel);
       return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
     },
-    raw: function (assetModel) {
+    conda: function (me, assetModel) {
       var repositoryName = assetModel.get('repositoryName'),
-          assetName = assetModel.get('name');
+          assetName = me.getAssetName(assetModel);
       return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
     },
-    rubygems: function (assetModel) {
+    npm: function (me, assetModel) {
       var repositoryName = assetModel.get('repositoryName'),
-          assetName = assetModel.get('name');
+          assetName = me.getAssetName(assetModel);
       return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
     },
-    docker: function (assetModel) {
+    nuget: function (me, assetModel) {
       var repositoryName = assetModel.get('repositoryName'),
-          assetName = assetModel.get('name');
+          assetName = me.getAssetName(assetModel);
       return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
     },
-    bower: function (assetModel) {
+    r: function (me, assetModel) {
       var repositoryName = assetModel.get('repositoryName'),
-          assetName = assetModel.get('name');
+          assetName = me.getAssetName(assetModel);
       return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
     },
-    pypi: function (assetModel) {
+    raw: function (me, assetModel) {
       var repositoryName = assetModel.get('repositoryName'),
-          assetName = assetModel.get('name');
+          assetName = me.getAssetName(assetModel);
       return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
     },
-    yum: function (assetModel) {
+    rubygems: function (me, assetModel) {
       var repositoryName = assetModel.get('repositoryName'),
-          assetName = assetModel.get('name');
+          assetName = me.getAssetName(assetModel);
       return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
     },
-    gitlfs: function (assetModel) {
+    docker: function (me, assetModel) {
       var repositoryName = assetModel.get('repositoryName'),
-          assetName = assetModel.get('name');
+          assetName = me.getAssetName(assetModel);
       return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
     },
-    go: function (assetModel) {
+    bower: function (me, assetModel) {
       var repositoryName = assetModel.get('repositoryName'),
-          assetName = assetModel.get('name');
+          assetName = me.getAssetName(assetModel);
+      return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
+    },
+    pypi: function (me, assetModel) {
+      var repositoryName = assetModel.get('repositoryName'),
+          assetName = me.getAssetName(assetModel);
+      return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
+    },
+    yum: function (me, assetModel) {
+      var repositoryName = assetModel.get('repositoryName'),
+          assetName = me.getAssetName(assetModel);
+      return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
+    },
+    gitlfs: function (me, assetModel) {
+      var repositoryName = assetModel.get('repositoryName'),
+          assetName = me.getAssetName(assetModel);
+      return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
+    },
+    go: function (me, assetModel) {
+      var repositoryName = assetModel.get('repositoryName'),
+          assetName = me.getAssetName(assetModel);
+      return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
+    },
+    helm: function (me, assetModel) {
+      var repositoryName = assetModel.get('repositoryName'),
+          assetName = me.getAssetName(assetModel);
+      return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
+    },
+    p2: function (me, assetModel) {
+      var repositoryName = assetModel.get('repositoryName'),
+          assetName = me.getAssetName(assetModel);
       return NX.util.Url.asLink(NX.util.Url.baseUrl + '/repository/' + encodeURIComponent(repositoryName) + '/' + encodeURI(assetName), assetName);
     }
+  },
+
+  /**
+   * Get the asset name without beginning '/'.
+   *
+   * @private
+   * @param {Object} assetModel the asset to fetch its name.
+   * @return the asset name.
+   */
+  getAssetName: function(assetModel) {
+    var assetName = assetModel.get('name');
+    return assetName.startsWith('/') ? assetName.substring(1) : assetName;
   },
 
   /**
@@ -130,7 +167,7 @@ Ext.define('NX.coreui.util.RepositoryUrls', {
     //</if>
 
     var linkStrategy = this.repositoryUrlStrategies[format];
-    return linkStrategy(assetModel);
+    return linkStrategy(this, assetModel);
   }
 
 });

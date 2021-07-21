@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.sonatype.nexus.buildsupport</groupId>
     <artifactId>nexus-buildsupport</artifactId>
-    <version>3.21.0-SNAPSHOT</version>
+    <version>3.33.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>nexus-buildsupport-rest</artifactId>
@@ -28,31 +28,42 @@
   <packaging>pom</packaging>
 
   <properties>
-    <jackson2.version>2.9.2</jackson2.version>
-    <jaxb.version>2.2.7</jaxb.version>
-    <resteasy.version>3.1.3.Final</resteasy.version>
-    <swagger.version>1.5.21</swagger.version>
+    <jackson2.version>2.11.4</jackson2.version>
+    <jaxb.version>2.3.3</jaxb.version>
+    <resteasy.version>3.15.1.Final</resteasy.version>
+    <swagger.version>1.6.2</swagger.version>
+    <snakeyaml.version>1.28</snakeyaml.version>
   </properties>
 
   <dependencyManagement>
     <dependencies>
 
       <dependency>
-        <groupId>javax.xml.bind</groupId>
-        <artifactId>jaxb-api</artifactId>
+        <groupId>jakarta.xml.bind</groupId>
+        <artifactId>jakarta.xml.bind-api</artifactId>
         <version>${jaxb.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>jakarta.activation</groupId>
+            <artifactId>jakarta.activation-api</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
 
       <dependency>
-        <groupId>com.sun.xml.bind</groupId>
-        <artifactId>jaxb-core</artifactId>
+        <groupId>org.glassfish.jaxb</groupId>
+        <artifactId>jaxb-runtime</artifactId>
         <version>${jaxb.version}</version>
-      </dependency>
-
-      <dependency>
-        <groupId>com.sun.xml.bind</groupId>
-        <artifactId>jaxb-impl</artifactId>
-        <version>${jaxb.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>com.sun.activation</groupId>
+            <artifactId>jakarta.activation</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>com.sun.activation</groupId>
+            <artifactId>jakarta.activation-api</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
 
       <dependency>
@@ -64,7 +75,7 @@
       <dependency>
         <groupId>org.jsoup</groupId>
         <artifactId>jsoup</artifactId>
-        <version>1.9.1</version>
+        <version>1.13.1</version>
       </dependency>
 
       <!--
@@ -73,7 +84,7 @@
       <dependency>
         <groupId>com.thoughtworks.xstream</groupId>
         <artifactId>xstream</artifactId>
-        <version>1.4.10</version>
+        <version>1.4.17</version>
         <exclusions>
           <exclusion>
             <groupId>xmlpull</groupId>
@@ -95,19 +106,19 @@
       <dependency>
         <groupId>com.sun.xml.fastinfoset</groupId>
         <artifactId>FastInfoset</artifactId>
-        <version>1.2.13</version>
+        <version>1.2.18</version>
       </dependency>
 
       <dependency>
         <groupId>com.ning</groupId>
         <artifactId>compress-lzf</artifactId>
-        <version>1.0.2</version>
+        <version>1.1</version>
       </dependency>
 
       <dependency>
-        <groupId>io.netty</groupId>
-        <artifactId>netty</artifactId>
-        <version>3.10.6.Final</version>
+        <groupId>org.yaml</groupId>
+        <artifactId>snakeyaml</artifactId>
+        <version>${snakeyaml.version}</version>
       </dependency>
 
       <dependency>
@@ -134,7 +145,7 @@
       <dependency>
         <groupId>org.webjars</groupId>
         <artifactId>swagger-ui</artifactId>
-        <version>3.24.3</version>
+        <version>3.48.0</version>
       </dependency>
 
       <!--
@@ -145,12 +156,32 @@
         <groupId>org.jboss.resteasy</groupId>
         <artifactId>resteasy-jaxrs</artifactId>
         <version>${resteasy.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>com.sun.activation</groupId>
+            <artifactId>jakarta.activation</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>com.sun.activation</groupId>
+            <artifactId>jakarta.activation-api</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
 
       <dependency>
         <groupId>org.jboss.resteasy</groupId>
         <artifactId>resteasy-jaxb-provider</artifactId>
         <version>${resteasy.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>com.sun.activation</groupId>
+            <artifactId>jakarta.activation</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>com.sun.xml.bind</groupId>
+            <artifactId>jaxb-impl</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
 
       <dependency>
@@ -158,6 +189,10 @@
         <artifactId>resteasy-multipart-provider</artifactId>
         <version>${resteasy.version}</version>
         <exclusions>
+          <exclusion>
+            <groupId>com.sun.activation</groupId>
+            <artifactId>jakarta.activation</artifactId>
+          </exclusion>
           <exclusion>
             <groupId>commons-logging</groupId>
             <artifactId>commons-logging</artifactId>
@@ -185,7 +220,7 @@
 
       <dependency>
         <groupId>org.jboss.resteasy</groupId>
-        <artifactId>resteasy-validator-provider-11</artifactId>
+        <artifactId>resteasy-validator-provider</artifactId>
         <version>${resteasy.version}</version>
       </dependency>
 
@@ -233,6 +268,12 @@
         <groupId>com.fasterxml.jackson.module</groupId>
         <artifactId>jackson-module-jaxb-annotations</artifactId>
         <version>${jackson2.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>jakarta.activation</groupId>
+            <artifactId>jakarta.activation-api</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
 
       <dependency>
@@ -268,6 +309,19 @@
       <dependency>
         <groupId>com.fasterxml.jackson.datatype</groupId>
         <artifactId>jackson-datatype-guava</artifactId>
+        <version>${jackson2.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>com.fasterxml.jackson.datatype</groupId>
+        <artifactId>jackson-datatype-jsr310</artifactId>
+        <version>${jackson2.version}</version>
+      </dependency>
+
+      <!-- serialize/deserialize Java 8 data types like Optional -->
+      <dependency>
+        <groupId>com.fasterxml.jackson.datatype</groupId>
+        <artifactId>jackson-datatype-jdk8</artifactId>
         <version>${jackson2.version}</version>
       </dependency>
     </dependencies>

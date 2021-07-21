@@ -19,9 +19,11 @@ import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration
 import org.sonatype.nexus.blobstore.api.BlobStoreException
 import org.sonatype.nexus.blobstore.api.BlobStoreManager
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics
+import org.sonatype.nexus.blobstore.api.ChangeRepositoryBlobstoreDataService
 import org.sonatype.nexus.blobstore.group.BlobStoreGroup
 import org.sonatype.nexus.blobstore.group.BlobStoreGroupService
 import org.sonatype.nexus.common.app.ApplicationDirectories
+import org.sonatype.nexus.rapture.PasswordPlaceholder
 import org.sonatype.nexus.repository.manager.RepositoryManager
 
 import spock.lang.Specification
@@ -39,15 +41,17 @@ class BlobStoreComponentTest
   BlobStoreManager blobStoreManager = Mock()
 
   ApplicationDirectories applicationDirectories = Mock()
-  
+
   RepositoryManager repositoryManager = Mock()
 
   BlobStoreGroupService blobStoreGroupService = Mock()
 
+  ChangeRepositoryBlobstoreDataService changeRepositoryBlobstoreDataService = Mock()
+
   @Subject
   BlobStoreComponent blobStoreComponent = new BlobStoreComponent(blobStoreManager: blobStoreManager,
       applicationDirectories: applicationDirectories, repositoryManager: repositoryManager,
-      blobStoreGroupService: { blobStoreGroupService })
+      blobStoreGroupService: { blobStoreGroupService }, changeRepositoryBlobstoreDataService: changeRepositoryBlobstoreDataService)
 
   def 'Read types returns descriptor data'() {
     given: 'A blobstore descriptor'
@@ -58,7 +62,7 @@ class BlobStoreComponentTest
       def types = blobStoreComponent.readTypes()
 
     then: 'The descriptor information is returned'
-      types.collect{[it.id, it.name, it.formFields]} == [['MyType', 'MyType', []]]
+      types.collect{[it.id, it.name, it.formFields]} == [['MyType', 'MyType', []], ['', '', null]]
   }
 
   def 'Create blobstore creates and returns new blobstore'() {
@@ -93,7 +97,7 @@ class BlobStoreComponentTest
 
     when: 'Attempting to remove an used blobstore'
       blobStoreComponent.remove('used')
-      
+
     then: 'It aint'
       thrown BlobStoreException
       1 * repositoryManager.isBlobstoreUsed('used') >> true
@@ -216,4 +220,77 @@ class BlobStoreComponentTest
       1 * blobStoreConfig.setAttributes([blobStoreQuotaConfig: [quotaType: 'properType', quotaLimitBytes: 10 * pow(10, 6)]])
   }
 
+  def 'requesting blobstore names only does not set other properties'() {
+    setup:
+      def blobStore = Mock(BlobStore) {
+        getBlobStoreConfiguration() >> new MockBlobStoreConfiguration(name: "test",
+            attributes: [file: [path: 'path'], blobStoreQuotaConfig: [quotaType: 'spaceUsedQuota', quotaLimitBytes: 7]])
+      }
+
+    when: 'create the XO with namesOnly'
+      def blobStoreXO = blobStoreComponent.asBlobStoreXO(blobStore, [], true)
+
+    then: 'only name is set'
+      blobStoreXO.name == 'test'
+      blobStoreXO.type == null
+      0 * blobStore.getMetrics()
+  }
+
+  def 'updating an s3 blobstore with the password placeholder does not alter the secret access key'() {
+    given: 'A blobstore update request'
+      def originalSecret = 'hello'
+      BlobStoreXO blobStoreXO = new BlobStoreXO(name: 'myblobs', type: 'S3',
+          attributes: [s3: [accessKeyId: 'test', secretAccessKey: PasswordPlaceholder.get()]])
+      BlobStoreConfiguration existingConfig = new MockBlobStoreConfiguration(name: 'myblobs', type: 'S3',
+          attributes: [s3: [accessKeyId: 'test', secretAccessKey: originalSecret]])
+      BlobStore blobStore = Mock()
+      1 * blobStoreManager.get('myblobs') >> blobStore
+      1 * blobStoreManager.newConfiguration() >> new MockBlobStoreConfiguration();
+
+    when: 'The blobstore is updated'
+      def updatedXO = blobStoreComponent.update(blobStoreXO)
+
+    then: 'The blobstore is updated with the original secret access key'
+      _ * blobStore.getBlobStoreConfiguration() >> existingConfig
+      _ * blobStore.getMetrics() >> Mock(BlobStoreMetrics)
+      1 * blobStoreManager.update(_) >> { args ->
+        assert args[0].attributes.s3.secretAccessKey == originalSecret
+        blobStore
+      }
+      updatedXO.attributes.s3.secretAccessKey == PasswordPlaceholder.get()
+  }
+
+  def 'updating an azure blobstore with the password placeholder does not alter the account key'() {
+    given: 'A blobstore update request'
+      def originalSecret = 'hello'
+      BlobStoreXO blobStoreXO = new BlobStoreXO(name: 'myblobs', type: 'Azure Cloud Storage',
+          attributes: ['azure cloud storage': [accountKey: 'test', accountKey: PasswordPlaceholder.get()]])
+      BlobStoreConfiguration existingConfig = new MockBlobStoreConfiguration(name: 'myblobs', type: 'Azure Cloud Storage',
+          attributes: ['azure cloud storage': [accountKey: 'test', accountKey: originalSecret]])
+      BlobStore blobStore = Mock()
+      1 * blobStoreManager.get('myblobs') >> blobStore
+      1 * blobStoreManager.newConfiguration() >> new MockBlobStoreConfiguration();
+
+    when: 'The blobstore is updated'
+      def updatedXO = blobStoreComponent.update(blobStoreXO)
+
+    then: 'The blobstore is updated with the original secret access key'
+      _ * blobStore.getBlobStoreConfiguration() >> existingConfig
+      _ * blobStore.getMetrics() >> Mock(BlobStoreMetrics)
+      1 * blobStoreManager.update(_) >> { args ->
+        assert args[0].attributes.'azure cloud storage'.accountKey == originalSecret
+        blobStore
+      }
+      updatedXO.attributes.'azure cloud storage'.accountKey == PasswordPlaceholder.get()
+  }
+
+  def 'Remove blobstore does not remove blobstores part of a move repository task'() {
+    when: 'Attempting to remove an used blobstore'
+      blobStoreComponent.remove('used_in_move')
+
+    then: 'It aint'
+      thrown BlobStoreException
+      1 * changeRepositoryBlobstoreDataService.changeRepoTaskUsingBlobstoreCount('used_in_move') >> 2
+      0 * blobStoreManager.delete('used_in_move')
+  }
 }

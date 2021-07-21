@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.repository.content;
 
-import org.sonatype.nexus.common.collect.NestedAttributesMap;
+import java.time.OffsetDateTime;
 
-import org.joda.time.DateTime;
+import org.sonatype.nexus.common.collect.NestedAttributesMap;
 
 /**
  * Metadata common to all repository content.
@@ -29,12 +29,19 @@ public interface RepositoryContent
   NestedAttributesMap attributes();
 
   /**
+   * Shortcut to content sub-attributes.
+   */
+  default NestedAttributesMap attributes(String key) {
+    return attributes().child(key);
+  }
+
+  /**
    * When the metadata was first created.
    */
-  DateTime created();
+  OffsetDateTime created();
 
   /**
    * When the metadata was last updated.
    */
-  DateTime lastUpdated();
+  OffsetDateTime lastUpdated();
 }

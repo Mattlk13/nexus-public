@@ -22,12 +22,12 @@ import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
+import org.sonatype.nexus.common.io.InputStreamSupplier;
 import org.sonatype.nexus.mime.MimeRulesSource;
 import org.sonatype.nexus.repository.InvalidContentException;
-import org.sonatype.nexus.repository.storage.ContentValidator;
-import org.sonatype.nexus.repository.storage.DefaultContentValidator;
-
-import com.google.common.base.Supplier;
+import org.sonatype.nexus.repository.maven.MavenPath;
+import org.sonatype.nexus.repository.mime.ContentValidator;
+import org.sonatype.nexus.repository.mime.DefaultContentValidator;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -52,11 +52,11 @@ public class MavenContentValidator
 
   @Nonnull
   @Override
-  public String determineContentType(boolean strictContentTypeValidation,
-                                     Supplier<InputStream> contentSupplier,
-                                     @Nullable MimeRulesSource mimeRulesSource,
-                                     @Nullable String contentName,
-                                     @Nullable String declaredContentType) throws IOException
+  public String determineContentType(final boolean strictContentTypeValidation,
+                                     final InputStreamSupplier contentSupplier,
+                                     @Nullable final MimeRulesSource mimeRulesSource,
+                                     @Nullable final String contentName,
+                                     @Nullable final String declaredContentType) throws IOException
   {
     if (contentName != null) {
       if (contentName.endsWith(".pom")) {
@@ -65,7 +65,7 @@ public class MavenContentValidator
             strictContentTypeValidation, contentSupplier, mimeRulesSource, contentName + ".xml", declaredContentType
         );
       }
-      else if (contentName.endsWith(".sha1") || contentName.endsWith(".md5")) {
+      else if (isHashContentType(contentName)) {
         if (strictContentTypeValidation) {
           // hashes are small/simple, do it directly
           try (InputStream is = contentSupplier.get()) {
@@ -85,5 +85,10 @@ public class MavenContentValidator
     return defaultContentValidator.determineContentType(
         strictContentTypeValidation, contentSupplier, mimeRulesSource, contentName, declaredContentType
     );
+  }
+
+  private boolean isHashContentType(final String contentName) {
+    return MavenPath.HashType.ALGORITHMS.stream()
+        .anyMatch(algorithm -> contentName.endsWith(algorithm.name()));
   }
 }

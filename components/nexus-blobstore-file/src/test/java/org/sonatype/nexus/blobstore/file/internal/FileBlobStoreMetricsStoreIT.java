@@ -31,7 +31,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
 
-import static com.jayway.awaitility.Awaitility.await;
+import static org.awaitility.Awaitility.await;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -82,6 +82,7 @@ public class FileBlobStoreMetricsStoreIT
     }
   }
 
+  @SuppressWarnings("java:S2699") // sonar doesn't detect awaitility assertions https://jira.sonarsource.com/browse/SONARJAVA-3334
   @Test
   public void metricsCanCount() throws Exception {
     underTest.start();
@@ -92,6 +93,7 @@ public class FileBlobStoreMetricsStoreIT
     await().atMost(METRICS_FLUSH_TIMEOUT, SECONDS).until(() -> underTest.getMetrics().getBlobCount(), is(0L));
   }
 
+  @SuppressWarnings("java:S2699") // sonar doesn't detect assertions in awaitility https://jira.sonarsource.com/browse/SONARJAVA-3334
   @Test
   public void metricsLoadsExistingPropertyFile() throws Exception {
     PropertiesFile props = new PropertiesFile(

@@ -13,6 +13,7 @@
 package org.sonatype.nexus.blobstore.group.internal;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Predicate;
 
@@ -30,6 +31,7 @@ import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.blobstore.group.BlobStoreGroup;
 import org.sonatype.nexus.blobstore.group.BlobStoreGroupService;
+import org.sonatype.nexus.blobstore.group.FillPolicy;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaService;
 import org.sonatype.nexus.formfields.ComboboxFormField;
 import org.sonatype.nexus.formfields.FormField;
@@ -39,8 +41,11 @@ import org.sonatype.nexus.rest.ValidationErrorsException;
 import org.apache.commons.lang.StringUtils;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Streams.stream;
 import static java.lang.String.format;
 import static java.util.Arrays.asList;
+import static java.util.stream.Collectors.toList;
+import static java.util.stream.Collectors.toMap;
 import static org.sonatype.nexus.blobstore.group.BlobStoreGroup.CONFIG_KEY;
 import static org.sonatype.nexus.blobstore.group.BlobStoreGroup.FILL_POLICY_KEY;
 import static org.sonatype.nexus.blobstore.group.BlobStoreGroup.MEMBERS_KEY;
@@ -81,16 +86,20 @@ public class BlobStoreGroupDescriptor
 
   private final FormField fillPolicy;
 
+  private final Map<String, FillPolicy> fillPolicies;
+
   @Inject
   public BlobStoreGroupDescriptor(final BlobStoreManager blobStoreManager,
                                   final BlobStoreUtil blobStoreUtil,
                                   final Provider<BlobStoreGroupService> blobStoreGroupService,
-                                  final BlobStoreQuotaService quotaService)
+                                  final BlobStoreQuotaService quotaService,
+                                  final Map<String, FillPolicy> fillPolicies)
   {
     super(quotaService);
     this.blobStoreManager = checkNotNull(blobStoreManager);
     this.blobStoreUtil = checkNotNull(blobStoreUtil);
     this.blobStoreGroupService = checkNotNull(blobStoreGroupService);
+    this.fillPolicies = checkNotNull(fillPolicies);
     this.members = new ItemselectFormField(
         MEMBERS_KEY,
         messages.membersLabel(),
@@ -108,6 +117,14 @@ public class BlobStoreGroupDescriptor
         null,
         FormField.MANDATORY
     ).withStoreApi("coreui_Blobstore.fillPolicies");
+    this.fillPolicy.getAttributes().put("options", fillPolicies.entrySet().stream().collect(
+        toMap(Map.Entry::getKey, e -> e.getValue().getName())
+    ));
+  }
+
+  @Override
+  public String getId() {
+    return "group";
   }
 
   @Override
@@ -117,6 +134,12 @@ public class BlobStoreGroupDescriptor
 
   @Override
   public List<FormField> getFormFields() {
+    List<String> blobStores = stream(blobStoreManager.browse())
+        .map(BlobStore::getBlobStoreConfiguration)
+        .map(BlobStoreConfiguration::getName)
+        .collect(toList());
+    this.members.getAttributes().put("options", blobStores);
+
     return asList(members, fillPolicy);
   }
 
@@ -134,6 +157,11 @@ public class BlobStoreGroupDescriptor
     String fillPolicy = config.attributes(CONFIG_KEY).get(FILL_POLICY_KEY, String.class);
     if (StringUtils.isBlank(fillPolicy)) {
       throw new ValidationErrorsException("Blob store group requires a fill policy configuration");
+    }
+    if (!fillPolicies.containsKey(fillPolicy)) {
+      throw new ValidationErrorsException("Blob store group requires a valid fill policy name, options include [{}]",
+          String.join(", ", fillPolicies.keySet())
+      );
     }
 
     List<String> memberNames = config.attributes(CONFIG_KEY).get(MEMBERS_KEY, List.class);
@@ -196,7 +224,7 @@ public class BlobStoreGroupDescriptor
             if (existingMember.isWritable() || !existingMember.isEmpty()) {
               throw new ValidationErrorsException(
                   format("Blob Store '%s' cannot be removed from Blob Store Group '%s', " +
-                      "use 'Admin - Remove a member from a blob store group' task instead",
+                          "use 'Admin - Remove a member from a blob store group' task instead",
                       existingMemberName, name));
             }
           }

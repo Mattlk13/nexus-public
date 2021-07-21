@@ -31,7 +31,7 @@ import org.sonatype.nexus.transaction.UnitOfWork;
 public class SingleAssetComponentMaintenance
     extends DefaultComponentMaintenanceImpl
 {
-  /**
+  /*
    * Deletes both the asset and its component.
    */
   @TransactionalDeleteBlob

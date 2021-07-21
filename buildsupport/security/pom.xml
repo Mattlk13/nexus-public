@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.sonatype.nexus.buildsupport</groupId>
     <artifactId>nexus-buildsupport</artifactId>
-    <version>3.21.0-SNAPSHOT</version>
+    <version>3.33.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>nexus-buildsupport-security</artifactId>
@@ -28,8 +28,8 @@
   <packaging>pom</packaging>
 
   <properties>
-    <bouncycastle.version>1.60</bouncycastle.version>
-    <apache-shiro.version>1.4.2</apache-shiro.version>
+    <bouncycastle.version>1.67</bouncycastle.version>
+    <apache-shiro.version>1.7.1</apache-shiro.version>
   </properties>
 
   <dependencyManagement>
@@ -39,28 +39,20 @@
 
       <dependency>
         <groupId>org.bouncycastle</groupId>
-        <artifactId>bcprov-jdk15on</artifactId>
+        <artifactId>bcprov-jdk15to18</artifactId>
         <version>${bouncycastle.version}</version>
       </dependency>
 
       <dependency>
         <groupId>org.bouncycastle</groupId>
-        <artifactId>bcpg-jdk15on</artifactId>
+        <artifactId>bcpg-jdk15to18</artifactId>
         <version>${bouncycastle.version}</version>
       </dependency>
 
       <dependency>
         <groupId>org.bouncycastle</groupId>
-        <artifactId>bcpkix-jdk15on</artifactId>
+        <artifactId>bcpkix-jdk15to18</artifactId>
         <version>${bouncycastle.version}</version>
-      </dependency>
-
-      <!-- geronimo -->
-
-      <dependency>
-        <groupId>org.apache.geronimo.framework</groupId>
-        <artifactId>geronimo-crypto</artifactId>
-        <version>2.2.1</version>
       </dependency>
 
       <!-- shiro -->
@@ -78,6 +70,14 @@
             <groupId>commons-beanutils</groupId>
             <artifactId>commons-beanutils</artifactId>
           </exclusion>
+          <!--
+          Exclude shiro modules that are duplicated in shiro-core
+          (this exclusion can be removed when SHIRO-654 is fixed)
+          -->
+          <exclusion>
+            <groupId>org.apache.shiro</groupId>
+            <artifactId>*</artifactId>
+          </exclusion>
         </exclusions>
       </dependency>
 
@@ -85,6 +85,12 @@
         <groupId>org.apache.shiro</groupId>
         <artifactId>shiro-guice</artifactId>
         <version>${apache-shiro.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>com.google.inject.extensions</groupId>
+            <artifactId>guice-multibindings</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
 
       <dependency>

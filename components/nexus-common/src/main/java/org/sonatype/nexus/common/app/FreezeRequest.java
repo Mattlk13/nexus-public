@@ -24,7 +24,7 @@ import static java.util.Optional.ofNullable;
 /**
  * Request to freeze the application.
  *
- * @since 3.next
+ * @since 3.21
  */
 public class FreezeRequest
 {
@@ -59,6 +59,15 @@ public class FreezeRequest
    */
   public Optional<String> token() {
     return ofNullable(token);
+  }
+
+  /**
+   * Is this a user request?
+   *
+   * @since 3.24
+   */
+  public boolean isUserRequest() {
+    return token == null; // user requests have no system token
   }
 
   /**

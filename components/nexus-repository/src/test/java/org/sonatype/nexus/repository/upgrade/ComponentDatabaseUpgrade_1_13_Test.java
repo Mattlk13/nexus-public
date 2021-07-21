@@ -23,7 +23,7 @@ import org.junit.Rule;
 import org.junit.Test;
 
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.fail;
 
 public class ComponentDatabaseUpgrade_1_13_Test
@@ -62,6 +62,7 @@ public class ComponentDatabaseUpgrade_1_13_Test
     }
   }
 
+  @SuppressWarnings("java:S2699") // sonar wants assertions, but seems best to let an exception bubble up
   @Test
   public void testWithoutExistingDb() throws Exception {
     underTest.apply();

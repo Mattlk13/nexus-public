@@ -35,6 +35,11 @@ public class ContentRepositoryData
     return configRepositoryId;
   }
 
+  @Override
+  public Integer contentRepositoryId() {
+    return repositoryId;
+  }
+
   // MyBatis setters + validation
 
   /**
@@ -42,5 +47,12 @@ public class ContentRepositoryData
    */
   public void setConfigRepositoryId(final EntityId configRepositoryId) {
     this.configRepositoryId = checkNotNull(configRepositoryId);
+  }
+
+  @Override
+  public String toString() {
+    return "ContentRepositoryData{" +
+        "configRepositoryId=" + configRepositoryId +
+        "} " + super.toString();
   }
 }

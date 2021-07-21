@@ -43,11 +43,14 @@ import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 import org.sonatype.nexus.blobstore.api.BlobStoreUsageChecker;
+import org.sonatype.nexus.blobstore.api.RawObjectAccess;
+import org.sonatype.nexus.blobstore.api.UnimplementedRawObjectAccess;
 import org.sonatype.nexus.blobstore.group.internal.BlobStoreGroupMetrics;
 import org.sonatype.nexus.blobstore.group.internal.WriteToFirstMemberFillPolicy;
 import org.sonatype.nexus.cache.CacheHelper;
 import org.sonatype.nexus.common.stateguard.Guarded;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
+import org.sonatype.nexus.common.stateguard.Transitions;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Supplier;
@@ -61,6 +64,7 @@ import static java.util.function.Function.identity;
 import static java.util.stream.Collectors.toList;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.FAILED;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.NEW;
+import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.SHUTDOWN;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STOPPED;
 
@@ -74,6 +78,8 @@ public class BlobStoreGroup
     extends StateGuardLifecycleSupport
     implements BlobStore
 {
+  private static final String RAW_OBJECTS_NOT_SUPPORTED = "Group BlobStore does not support raw objects";
+
   public static final String TYPE = "Group";
 
   public static final String CONFIG_KEY = "group";
@@ -127,6 +133,7 @@ public class BlobStoreGroup
           fillPolicyName, configuration.getName(), FALLBACK_FILL_POLICY_TYPE);
       this.fillPolicy = fillPolicyProviders.get(FALLBACK_FILL_POLICY_TYPE).get();
     }
+    fillPolicy.validateBlobStoreGroup(this);
   }
 
   @Override
@@ -179,7 +186,7 @@ public class BlobStoreGroup
   }
 
   private Blob create(final Map<String, String> headers, final CreateBlobFunction createBlobFunction) {
-    BlobStore result = fillPolicy.chooseBlobStore(this, headers);
+    BlobStore result = fillPolicy.chooseBlobStoreForCreate(this, headers);
     if (result == null) {
       throw new BlobStoreException("Unable to find a member Blob Store of '" + this + "' for create", null);
     }
@@ -191,10 +198,32 @@ public class BlobStoreGroup
   @Override
   @Guarded(by = STARTED)
   public Blob copy(final BlobId blobId, final Map<String, String> headers) {
-    BlobStore target = locate(blobId)
+    BlobStore sourceBlobStore = locate(blobId)
         .orElseThrow(() -> new BlobStoreException("Unable to find blob", blobId));
-    Blob blob = target.copy(blobId, headers);
-    locatedBlobs.put(blob.getId(), target.getBlobStoreConfiguration().getName());
+
+    BlobStore destinationBlobStore = fillPolicy.chooseBlobStoreForCopy(this, sourceBlobStore, headers);
+
+    if (destinationBlobStore == null) {
+      throw new BlobStoreException("Unable to find a member Blob Store of '" + this + "' for copy", blobId);
+    }
+
+    Blob blob;
+    //if the source and destination blob stores are the same, perform the copy
+    if (sourceBlobStore.getBlobStoreConfiguration().getName()
+        .equals(destinationBlobStore.getBlobStoreConfiguration().getName())) {
+      blob = sourceBlobStore.copy(blobId, headers);
+    }
+    //if the source and destination blob stores are different, create it the blob in the destination store
+    else {
+      Blob blobToCopy = sourceBlobStore.get(blobId);
+      if (blobToCopy == null) {
+        log.error("Unable to copy blob because it doesn't exist in blob store: {}, blobId: {}", sourceBlobStore.getBlobStoreConfiguration().getName(), blobId);
+        throw new BlobStoreException("Unable to blob to copy", blobId);
+      }
+      blob = destinationBlobStore.create(blobToCopy.getInputStream(), headers, null);
+    }
+
+    locatedBlobs.put(blob.getId(), destinationBlobStore.getBlobStoreConfiguration().getName());
     return blob;
   }
 
@@ -214,6 +243,7 @@ public class BlobStoreGroup
     if (includeDeleted) {
       // check directly without using cache
       return members.get().stream()
+          .filter((BlobStore member) -> member.exists(blobId))
           .map((BlobStore member) -> member.get(blobId, true))
           .filter(Objects::nonNull)
           .findAny()
@@ -312,6 +342,17 @@ public class BlobStoreGroup
     return members.get().stream().map(BlobStore::isEmpty).reduce(true, Boolean::logicalAnd);
   }
 
+  /**
+   * Permanently stops this blob store regardless of the current state, disallowing restarts.
+   */
+  @Override
+  @Transitions(to = SHUTDOWN)
+  public void shutdown() throws Exception {
+    if (isStarted()) {
+      doStop();
+    }
+  }
+
   @Override
   public boolean exists(final BlobId blobId) {
     return members.get().stream()
@@ -319,7 +360,7 @@ public class BlobStoreGroup
   }
 
   @Override
-  @Guarded(by = {NEW, STOPPED, FAILED})
+  @Guarded(by = {NEW, STOPPED, FAILED, SHUTDOWN})
   public void remove() {
     // no-op
   }
@@ -329,6 +370,14 @@ public class BlobStoreGroup
     return members.get().stream()
         .map((BlobStore member) -> member.getBlobIdStream())
         .flatMap(identity());
+  }
+
+  @Override
+  public Stream<BlobId> getBlobIdUpdatedSinceStream(final int sinceDays) {
+    return members
+        .get()
+        .stream()
+        .flatMap((BlobStore member) -> member.getBlobIdUpdatedSinceStream(sinceDays));
   }
 
   @Override
@@ -354,6 +403,11 @@ public class BlobStoreGroup
 
   public List<BlobStore> getMembers() {
     return unmodifiableList(members.get());
+  }
+
+  @Override
+  public RawObjectAccess getRawObjectAccess() {
+    return new UnimplementedRawObjectAccess();
   }
 
   /**

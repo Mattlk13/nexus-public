@@ -33,6 +33,7 @@ import org.sonatype.nexus.blobstore.api.BlobStoreUsageChecker;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 import org.sonatype.nexus.common.stateguard.Guarded;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
+import org.sonatype.nexus.common.stateguard.Transitions;
 
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
@@ -41,6 +42,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static org.sonatype.nexus.blobstore.api.BlobAttributesConstants.HEADER_PREFIX;
+import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.SHUTDOWN;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
 
 /**
@@ -52,11 +54,11 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
     extends StateGuardLifecycleSupport
     implements BlobStore
 {
-  public static final String BLOB_ATTRIBUTE_SUFFIX = ".properties";
-
   public static final String CONTENT_TMP_PATH = "/content/tmp/";
 
   private final Map<String, Timer> timers = new ConcurrentHashMap<>();
+
+  protected final PerformanceLogger performanceLogger = new PerformanceLogger();
 
   private MetricRegistry metricRegistry;
 
@@ -118,12 +120,18 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
     checkArgument(headers.containsKey(CREATED_BY_HEADER), "Missing header: %s", CREATED_BY_HEADER);
 
     long start = System.nanoTime();
+    Blob blob = null;
     try {
-      return doCreate(blobData, headers, blobId);
+      blob = doCreate(blobData, headers, blobId);
     }
     finally {
-      updateTimer("create", System.nanoTime() - start);
+      long elapsed = System.nanoTime() - start;
+      updateTimer("create", elapsed);
+      if (blob != null) {
+        performanceLogger.logCreate(blob, elapsed);
+      }
     }
+    return blob;
   }
 
   protected abstract Blob doCreate(InputStream blobData, Map<String, String> headers, @Nullable BlobId blobId);
@@ -138,7 +146,9 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
       return doDelete(blobId, reason);
     }
     finally {
-      updateTimer("delete", System.nanoTime() - start);
+      long elapsed = System.nanoTime() - start;
+      updateTimer("delete", elapsed);
+      performanceLogger.logDelete(elapsed);
     }
   }
 
@@ -229,6 +239,7 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   @Override
   public void init(BlobStoreConfiguration configuration) {
     this.blobStoreConfiguration = configuration;
+    this.performanceLogger.setBlobStoreName(configuration.getName());
     doInit(this.blobStoreConfiguration);
   }
 
@@ -244,7 +255,7 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   protected String getBlobIdFromAttributeFilePath(final T attributeFilePath) {
     if (UUID_PATTERN.matcher(attributeFilePath.getFullPath()).matches()) {
       String filename = attributeFilePath.getFileName();
-      return filename.substring(0, filename.length() - BLOB_ATTRIBUTE_SUFFIX.length());
+      return filename.substring(0, filename.length() - BLOB_FILE_ATTRIBUTES_SUFFIX.length());
     }
     try {
       BlobAttributes fileBlobAttributes = getBlobAttributes(attributeFilePath);
@@ -266,5 +277,16 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   @Override
   public boolean isEmpty() {
     return !getBlobIdStream().findAny().isPresent();
+  }
+
+  /**
+   * Permanently stops this blob store regardless of the current state, disallowing restarts.
+   */
+  @Override
+  @Transitions(to = SHUTDOWN)
+  public void shutdown() throws Exception {
+    if (isStarted()) {
+      doStop();
+    }
   }
 }

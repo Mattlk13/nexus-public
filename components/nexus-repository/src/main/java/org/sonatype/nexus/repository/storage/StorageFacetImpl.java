@@ -40,6 +40,8 @@ import org.sonatype.nexus.orient.DatabaseInstance;
 import org.sonatype.nexus.repository.FacetSupport;
 import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.config.ConfigurationFacet;
+import org.sonatype.nexus.repository.move.RepositoryMoveService;
+import org.sonatype.nexus.repository.config.WritePolicy;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.repository.view.Payload;
 import org.sonatype.nexus.repository.view.payloads.TempBlobPartPayload;
@@ -48,10 +50,10 @@ import org.sonatype.nexus.security.ClientInfoProvider;
 import org.sonatype.nexus.validation.ConstraintViolationFactory;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Supplier;
+import java.util.function.Supplier;
 import com.google.common.collect.ImmutableMap;
 import com.orientechnologies.orient.core.db.document.ODatabaseDocumentTx;
-import org.hibernate.validator.constraints.NotEmpty;
+import javax.validation.constraints.NotEmpty;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.String.format;
@@ -59,8 +61,8 @@ import static org.sonatype.nexus.orient.transaction.OrientTransactional.inTxRetr
 import static org.sonatype.nexus.repository.FacetSupport.State.ATTACHED;
 import static org.sonatype.nexus.repository.FacetSupport.State.INITIALISED;
 import static org.sonatype.nexus.repository.FacetSupport.State.STARTED;
+import static org.sonatype.nexus.repository.config.ConfigurationConstants.STORAGE;
 import static org.sonatype.nexus.repository.storage.MetadataNodeEntityAdapter.P_ATTRIBUTES;
-import static org.sonatype.nexus.repository.storage.StorageFacetConstants.STORAGE;
 import static org.sonatype.nexus.validation.ConstraintViolations.maybeAdd;
 import static org.sonatype.nexus.validation.ConstraintViolations.maybePropagate;
 
@@ -100,6 +102,10 @@ public class StorageFacetImpl
 
   private final ConstraintViolationFactory constraintViolationFactory;
 
+  private final Provider<RepositoryMoveService> repositoryMoveStoreProvider;
+
+  private final BlobMetadataStorage blobMetadataStorage;
+
   @VisibleForTesting
   static class Config
   {
@@ -138,7 +144,9 @@ public class StorageFacetImpl
                           final MimeRulesSourceSelector mimeRulesSourceSelector,
                           final StorageFacetManager storageFacetManager,
                           final ComponentFactory componentFactory,
-                          final ConstraintViolationFactory constraintViolationFactory)
+                          final ConstraintViolationFactory constraintViolationFactory,
+                          final Provider<RepositoryMoveService> repositoryMoveStoreProvider,
+                          final BlobMetadataStorage blobMetadataStorage)
   {
     this.nodeAccess = checkNotNull(nodeAccess);
     this.blobStoreManager = checkNotNull(blobStoreManager);
@@ -153,6 +161,8 @@ public class StorageFacetImpl
     this.storageFacetManager = checkNotNull(storageFacetManager);
     this.componentFactory = checkNotNull(componentFactory);
     this.constraintViolationFactory = checkNotNull(constraintViolationFactory);
+    this.repositoryMoveStoreProvider = checkNotNull(repositoryMoveStoreProvider);
+    this.blobMetadataStorage = checkNotNull(blobMetadataStorage);
 
     this.txSupplier = () -> openStorageTx(databaseInstanceProvider.get().acquire());
   }
@@ -166,8 +176,17 @@ public class StorageFacetImpl
     StorageFacetImpl.Config configToValidate = facet(ConfigurationFacet.class)
         .readSection(configuration, STORAGE, StorageFacetImpl.Config.class);
     Set<ConstraintViolation<?>> violations = new HashSet<>();
+    maybeAdd(violations, validateBlobStoreExists(configToValidate.blobStoreName));
     maybeAdd(violations, validateBlobStoreNotInGroup(configToValidate.blobStoreName));
     maybePropagate(violations, log);
+  }
+
+  ConstraintViolation<?> validateBlobStoreExists(final String blobStoreName) {
+    return !blobStoreManager.exists(blobStoreName)
+        ? constraintViolationFactory
+        .createViolation(format("%s.%s.blobStoreName", P_ATTRIBUTES, STORAGE),
+            format("Blob Store '%s' does not exist", blobStoreName))
+        : null;
   }
 
   ConstraintViolation<?> validateBlobStoreNotInGroup(final String blobStoreName) {
@@ -291,7 +310,7 @@ public class StorageFacetImpl
         new StorageTxImpl(
             createdBy(),
             createdByIp(),
-            new BlobTx(nodeAccess, blobStore),
+            new BlobTx(nodeAccess, blobStore, blobMetadataStorage),
             db,
             getRepository().getName(),
             config.writePolicy == null ? WritePolicy.ALLOW : config.writePolicy,
@@ -302,7 +321,9 @@ public class StorageFacetImpl
             config.strictContentTypeValidation,
             contentValidatorSelector.validator(getRepository()),
             mimeRulesSourceSelector.ruleSource(getRepository()),
-            componentFactory
+            componentFactory,
+            repositoryMoveStoreProvider,
+            nodeAccess
         )
     );
   }

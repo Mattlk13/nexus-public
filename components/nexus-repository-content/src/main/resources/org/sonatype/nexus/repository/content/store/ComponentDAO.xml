@@ -25,16 +25,21 @@
       repository_id INT NOT NULL,
       namespace     VARCHAR NOT NULL,
       name          VARCHAR NOT NULL,
+      kind          VARCHAR NOT NULL,
       version       VARCHAR NOT NULL,
       attributes    ${JSON_TYPE} NOT NULL,
-      created       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      last_updated  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_updated  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
       CONSTRAINT pk_${format}_component_id PRIMARY KEY (component_id),
       CONSTRAINT uk_${format}_component_coordinate UNIQUE (repository_id, namespace, name, version),
-      CONSTRAINT fk_${format}_component_repository_id FOREIGN KEY (repository_id)
+
+      CONSTRAINT fk_${format}_component_repository FOREIGN KEY (repository_id)
          REFERENCES ${format}_content_repository (repository_id)
     );
+
+    CREATE INDEX IF NOT EXISTS idx_${format}_component_kind ON ${format}_component (kind);
+
     --
   </insert>
 
@@ -57,11 +62,28 @@
     </choose>
   </sql>
 
+  <select id="countComponents" resultType="int">
+    SELECT COUNT(*) FROM ${format}_component WHERE repository_id = #{repositoryId}
+        <if test="kind != null"> AND kind = #{kind}</if>
+        <if test="filter != null"> AND (${filter})</if>;
+  </select>
+
   <select id="browseComponents" resultType="ComponentData">
     SELECT * FROM ${format}_component WHERE repository_id = #{repositoryId}
-    <if test="continuationToken != null">
-      AND component_id > #{continuationToken}
-    </if>
+        <if test="continuationToken != null"> AND component_id > #{continuationToken}</if>
+        <if test="kind != null"> AND kind = #{kind}</if>
+        <if test="filter != null"> AND (${filter})</if>
+    ORDER BY component_id LIMIT #{limit};
+  </select>
+
+  <select id="browseComponentsInRepositories" resultType="ComponentData">
+    SELECT * FROM ${format}_component
+    WHERE repository_id IN
+    <foreach item="repositoryId" index="index" collection="repositoryIds"
+             open="(" separator="," close=")">
+      #{repositoryId}
+    </foreach>
+    <if test="continuationToken != null"> AND component_id > #{continuationToken}</if>
     ORDER BY component_id LIMIT #{limit};
   </select>
 
@@ -77,26 +99,64 @@
     SELECT version FROM ${format}_component WHERE <include refid="componentNamespaceMatch"/> AND name = #{name};
   </select>
 
-  <insert id="createComponent" useGeneratedKeys="true" keyProperty="componentId">
-    INSERT INTO ${format}_component (repository_id, namespace, name, version, attributes)
-        VALUES (#{repositoryId}, #{namespace}, #{name}, #{version}, #{attributes});
+  <insert id="createComponent" useGeneratedKeys="true" keyProperty="componentId" parameterType="ComponentData">
+    INSERT INTO ${format}_component (repository_id, namespace, name, kind, version, attributes)
+        VALUES (#{repositoryId}, #{namespace}, #{name}, #{kind}, #{version}, #{attributes});
   </insert>
 
   <select id="readComponent" resultType="ComponentData">
+    SELECT * FROM ${format}_component WHERE <include refid="componentMatch"/>;
+  </select>
+
+  <select id="readCoordinate" resultType="ComponentData">
     SELECT * FROM ${format}_component WHERE <include refid="componentCoordinateMatch"/>;
   </select>
 
-  <update id="updateComponentAttributes">
+  <update id="updateComponentKind" parameterType="ComponentData">
+    UPDATE ${format}_component SET kind = #{kind}, last_updated = CURRENT_TIMESTAMP
+        WHERE <include refid="componentMatch"/> AND kind != #{kind};
+  </update>
+
+  <select id="readComponentAttributes" resultType="NestedAttributesMap">
+    SELECT attributes FROM ${format}_component WHERE <include refid="componentMatch"/>;
+  </select>
+
+  <update id="updateComponentAttributes" parameterType="ComponentData">
     UPDATE ${format}_component SET attributes = #{attributes}, last_updated = CURRENT_TIMESTAMP
         WHERE <include refid="componentMatch"/> AND attributes != #{attributes};
   </update>
 
-  <delete id="deleteComponent">
-    DELETE FROM ${format}_component WHERE <include refid="componentCoordinateMatch"/>;
+  <delete id="deleteComponent" parameterType="ComponentData">
+    DELETE FROM ${format}_component WHERE <include refid="componentMatch"/>;
   </delete>
 
   <delete id="deleteComponents">
-    DELETE FROM ${format}_component WHERE repository_id = #{repositoryId};
+    DELETE FROM ${format}_component WHERE repository_id = #{repositoryId}<if test="limit gt 0"> LIMIT #{limit}</if>;
+  </delete>
+
+  <delete id="deleteComponents" databaseId="PostgreSQL">
+    DELETE FROM ${format}_component WHERE
+        <if test="limit gt 0"> component_id IN (SELECT component_id FROM ${format}_component WHERE </if>
+        repository_id = #{repositoryId}
+        <if test="limit gt 0"> LIMIT #{limit})</if>;
+  </delete>
+
+  <select id="selectNotRecentlyDownloaded" resultType="int">
+    SELECT component_id FROM ${format}_asset
+        WHERE repository_id = #{repositoryId} AND component_id IS NOT NULL
+    GROUP BY component_id
+        HAVING MAX(last_downloaded) &lt;= CURRENT_TIMESTAMP - CAST(#{daysAgo} AS INT) * INTERVAL '1' DAY
+        <if test="limit gt 0"> LIMIT #{limit}</if>;
+  </select>
+
+  <delete id="purgeSelectedComponents">
+    DELETE FROM ${format}_asset WHERE component_id = ANY(#{componentIds});
+    DELETE FROM ${format}_component WHERE component_id = ANY(#{componentIds});
+  </delete>
+
+  <delete id="purgeSelectedComponents" databaseId="PostgreSQL">
+    DELETE FROM ${format}_asset WHERE component_id = ANY(#{componentIds}::int[]);
+    DELETE FROM ${format}_component WHERE component_id = ANY(#{componentIds}::int[]);
   </delete>
 
 </mapper>

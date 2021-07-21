@@ -49,6 +49,11 @@ public class CselValidatorTest
   }
 
   @Test(expected = JexlException.class)
+  public void failsToParseCoordinateContentSelectors() throws Exception {
+    validateExpression("coordinate.groupId == \"com.sonatype\"");
+  }
+
+  @Test(expected = JexlException.class)
   public void failsToValidateInvalidContentSelectors() throws Exception {
     validateExpression("a.b.c = false");
   }
@@ -61,6 +66,11 @@ public class CselValidatorTest
   @Test(expected = JexlException.class)
   public void failsToValidateEmbeddedDoubleQuoteInStrings() throws Exception {
     validateExpression("format == '\"'");
+  }
+
+  @Test(expected = JexlException.class)
+  public void failsToValidateInvalidRegex() throws Exception {
+    validateExpression("path =~ '*foo*'");
   }
 
   public static File resolveBaseFile(final String path) {

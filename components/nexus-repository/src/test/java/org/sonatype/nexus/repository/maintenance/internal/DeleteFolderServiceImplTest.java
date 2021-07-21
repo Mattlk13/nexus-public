@@ -21,15 +21,15 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.entity.DetachedEntityId;
 import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.browse.BrowseNodeConfiguration;
+import org.sonatype.nexus.repository.browse.node.BrowseNode;
+import org.sonatype.nexus.repository.browse.node.BrowseNodeConfiguration;
+import org.sonatype.nexus.repository.browse.node.BrowseNodeQueryService;
 import org.sonatype.nexus.repository.security.ContentPermissionChecker;
 import org.sonatype.nexus.repository.security.RepositoryViewPermission;
-import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 import org.sonatype.nexus.repository.security.VariableResolverAdapterManager;
 import org.sonatype.nexus.repository.storage.Asset;
 import org.sonatype.nexus.repository.storage.AssetStore;
-import org.sonatype.nexus.repository.storage.BrowseNode;
-import org.sonatype.nexus.repository.storage.BrowseNodeStore;
+import org.sonatype.nexus.repository.storage.AssetVariableResolver;
 import org.sonatype.nexus.repository.storage.Component;
 import org.sonatype.nexus.repository.storage.ComponentMaintenance;
 import org.sonatype.nexus.repository.storage.DefaultComponent;
@@ -39,7 +39,6 @@ import org.sonatype.nexus.security.BreadActions;
 import org.sonatype.nexus.security.SecurityHelper;
 import org.sonatype.nexus.selector.VariableSource;
 
-import com.google.common.base.Suppliers;
 import org.apache.shiro.authz.UnauthorizedException;
 import org.joda.time.DateTime;
 import org.junit.Before;
@@ -57,7 +56,7 @@ public class DeleteFolderServiceImplTest
     extends TestSupport
 {
   @Mock
-  BrowseNodeStore browseNodeStore;
+  BrowseNodeQueryService browseNodeQueryService;
 
   @Mock
   BrowseNodeConfiguration configuration;
@@ -84,7 +83,7 @@ public class DeleteFolderServiceImplTest
   VariableResolverAdapterManager variableResolverAdapterManager;
 
   @Mock
-  VariableResolverAdapter variableResolverAdapter;
+  AssetVariableResolver assetVariableResolver;
 
   @Mock
   VariableSource variableSource;
@@ -102,15 +101,15 @@ public class DeleteFolderServiceImplTest
     when(repository.getName()).thenReturn("repo");
     when(repository.getFormat()).thenReturn(new Format("maven2") { });
     when(configuration.getMaxNodes()).thenReturn(1);
-    when(browseNodeStore.getByPath(repository, Arrays.asList("com", "sonatype"), 1)).thenReturn(browseNodes);
-    when(variableResolverAdapterManager.get("maven2")).thenReturn(variableResolverAdapter);
-    when(variableResolverAdapter.fromAsset(any(Asset.class))).thenReturn(variableSource);
+    when(browseNodeQueryService.getByPath(repository, Arrays.asList("com", "sonatype"), 1)).thenReturn(browseNodes);
+    when(variableResolverAdapterManager.get("maven2")).thenReturn(assetVariableResolver);
+    when(assetVariableResolver.fromAsset(any(Asset.class))).thenReturn(variableSource);
     when(repository.facet(StorageFacet.class)).thenReturn(storageFacet);
-    when(storageFacet.txSupplier()).thenReturn(Suppliers.ofInstance(storageTx));
+    when(storageFacet.txSupplier()).thenReturn(() -> storageTx);
     when(securityHelper.isPermitted(new RepositoryViewPermission(repository, BreadActions.DELETE)))
         .thenReturn(new boolean[]{false});
 
-    service = new DeleteFolderServiceImpl(browseNodeStore, configuration, assetStore, contentPermissionChecker,
+    service = new DeleteFolderServiceImpl(browseNodeQueryService, configuration, assetStore, contentPermissionChecker,
         variableResolverAdapterManager, securityHelper);
   }
 
@@ -183,9 +182,9 @@ public class DeleteFolderServiceImplTest
 
     DetachedEntityId assetEntityId = new DetachedEntityId(assetId);
 
-    BrowseNode browseNode = new BrowseNode();
-    browseNode.setLeaf(true);
-    browseNode.setAssetId(assetEntityId);
+    BrowseNode browseNode = mock(BrowseNode.class);
+    when(browseNode.isLeaf()).thenReturn(true);
+    when(browseNode.getAssetId()).thenReturn(assetEntityId);
 
     when(assetStore.getById(assetEntityId)).thenReturn(asset);
 
@@ -196,9 +195,9 @@ public class DeleteFolderServiceImplTest
 
   private BrowseNode mockComponentBrowseNode(final String componentId, final DateTime lastUpdated) {
     DetachedEntityId entityId = new DetachedEntityId(componentId);
-    BrowseNode browseNode = new BrowseNode();
-    browseNode.setLeaf(true);
-    browseNode.setComponentId(entityId);
+    BrowseNode browseNode = mock(BrowseNode.class);
+    when(browseNode.isLeaf()).thenReturn(true);
+    when(browseNode.getComponentId()).thenReturn(entityId);
 
     Component component = mock(Component.class);
     when(component.lastUpdated()).thenReturn(lastUpdated);
@@ -217,10 +216,10 @@ public class DeleteFolderServiceImplTest
     DetachedEntityId assetEntityId = new DetachedEntityId(assetId);
     DetachedEntityId componentEntityId = new DetachedEntityId(componentId);
 
-    BrowseNode browseNode = new BrowseNode();
-    browseNode.setLeaf(true);
-    browseNode.setAssetId(assetEntityId);
-    browseNode.setComponentId(componentEntityId);
+    BrowseNode browseNode = mock(BrowseNode.class);
+    when(browseNode.isLeaf()).thenReturn(true);
+    when(browseNode.getAssetId()).thenReturn(assetEntityId);
+    when(browseNode.getComponentId()).thenReturn(componentEntityId);
 
     when(assetStore.getById(assetEntityId)).thenReturn(asset);
     when(storageTx.browseAssets(component)).thenReturn(Collections.singletonList(asset));

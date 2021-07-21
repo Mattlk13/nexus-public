@@ -12,9 +12,12 @@
  */
 package org.sonatype.nexus.repository.maven.rest;
 
+import java.util.Objects;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 
+import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.rest.api.ProxyRepositoryApiRequestToConfigurationConverter;
 import org.sonatype.nexus.repository.routing.RoutingRuleStore;
@@ -36,6 +39,10 @@ public class MavenProxyRepositoryApiRequestToConfigurationConverter
     Configuration configuration = super.convert(request);
     configuration.attributes("maven").set("versionPolicy", request.getMaven().getVersionPolicy());
     configuration.attributes("maven").set("layoutPolicy", request.getMaven().getLayoutPolicy());
+    NestedAttributesMap httpclient = configuration.attributes("httpclient");
+    if (Objects.nonNull(httpclient.get("authentication"))) {
+      httpclient.child("authentication").set("preemptive", request.getHttpClient().getAuthentication().isPreemptive());
+    }
     return configuration;
   }
 }

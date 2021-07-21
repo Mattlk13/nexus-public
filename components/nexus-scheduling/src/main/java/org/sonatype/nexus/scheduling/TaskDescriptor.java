@@ -46,6 +46,11 @@ public interface TaskDescriptor
   List<FormField> getFormFields();
 
   /**
+   * @since 3.27
+   */
+  TaskConfiguration createTaskConfiguration();
+
+  /**
    * Directly manipulate task configuration before storing
    *
    * @since 3.2
@@ -77,4 +82,6 @@ public interface TaskDescriptor
    * @since 3.15
    */
   boolean isRecoverable();
+
+  boolean allowConcurrentRun();
 }

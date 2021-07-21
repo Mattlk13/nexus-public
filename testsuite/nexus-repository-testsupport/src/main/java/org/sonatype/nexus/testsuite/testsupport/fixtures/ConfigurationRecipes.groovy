@@ -18,7 +18,6 @@ import javax.inject.Provider
 import org.sonatype.nexus.blobstore.api.BlobStoreManager
 import org.sonatype.nexus.repository.config.Configuration
 import org.sonatype.nexus.repository.manager.RepositoryManager
-import org.sonatype.nexus.repository.storage.WritePolicy
 
 import groovy.transform.CompileStatic
 
@@ -39,7 +38,7 @@ trait ConfigurationRecipes
   @Nonnull
   Configuration createHosted(final String name,
                              final String recipeName,
-                             final WritePolicy writePolicy = WritePolicy.ALLOW,
+                             final String writePolicy = "ALLOW",
                              final boolean strictContentTypeValidation = true,
                              final String blobStoreName = BlobStoreManager.DEFAULT_BLOBSTORE_NAME,
                              final boolean latestPolicy = false)
@@ -56,7 +55,8 @@ trait ConfigurationRecipes
                 blobStoreName: blobStoreName,
                 writePolicy  : writePolicy,
                 latestPolicy  : latestPolicy,
-                strictContentTypeValidation: strictContentTypeValidation
+                strictContentTypeValidation: strictContentTypeValidation,
+                dataStoreName: 'nexus'
             ] as Map
         ] as Map
     )
@@ -94,7 +94,8 @@ trait ConfigurationRecipes
         ] as Map<String, Object>,
         storage      : [
             blobStoreName              : blobStoreName,
-            strictContentTypeValidation: strictContentTypeValidation
+            strictContentTypeValidation: strictContentTypeValidation,
+            dataStoreName: 'nexus'
         ] as Map<String, Object>
     ]
     if (!authentication.isEmpty()) {
@@ -117,6 +118,18 @@ trait ConfigurationRecipes
                             final String recipeName,
                             final String... members)
   {
+    createGroup(name, recipeName, 'None', members)
+  }
+
+  /**
+   * Create a group configuration for the given recipeName.
+   */
+  @Nonnull
+  Configuration createGroup(final String name,
+                            final String recipeName,
+                            final String groupWriteMember,
+                            final String... members)
+  {
     checkNotNull(name)
     checkArgument(recipeName && recipeName.endsWith('-group'))
 
@@ -126,11 +139,13 @@ trait ConfigurationRecipes
         online: true,
         attributes: [
             group  : [
+                groupWriteMember: groupWriteMember,
                 memberNames: members.toList()
             ] as Map<String, Object>,
             storage: [
                 blobStoreName: BlobStoreManager.DEFAULT_BLOBSTORE_NAME,
-                strictContentTypeValidation: true
+                strictContentTypeValidation: true,
+                dataStoreName: 'nexus'
             ] as Map<String, Object>
         ]
     )
@@ -142,6 +157,7 @@ trait ConfigurationRecipes
     config.recipeName = map.recipeName
     config.online = map.online
     config.attributes = map.attributes as Map
+
     return config
   }
 }

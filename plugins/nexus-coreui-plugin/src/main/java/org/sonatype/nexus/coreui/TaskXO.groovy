@@ -15,12 +15,13 @@ package org.sonatype.nexus.coreui
 import javax.validation.constraints.Future
 import javax.validation.constraints.NotNull
 
+import org.sonatype.nexus.scheduling.TaskNotificationCondition
 import org.sonatype.nexus.scheduling.constraints.CronExpression
 import org.sonatype.nexus.validation.group.Create
 import org.sonatype.nexus.validation.group.Update
 
 import groovy.transform.ToString
-import org.hibernate.validator.constraints.NotBlank
+import javax.validation.constraints.NotBlank
 
 /**
  * Task exchange object.
@@ -54,6 +55,7 @@ class TaskXO
   String timeZoneOffset;
 
   String alertEmail
+  TaskNotificationCondition notificationCondition
 
   Map<String, String> properties
 

@@ -20,13 +20,13 @@ import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.collect.AttributesMap;
+import org.sonatype.nexus.orient.maven.OrientMavenFacet;
 import org.sonatype.nexus.repository.IllegalOperationException;
 import org.sonatype.nexus.repository.http.HttpResponses;
 import org.sonatype.nexus.repository.maven.LayoutPolicy;
-import org.sonatype.nexus.repository.maven.MavenFacet;
 import org.sonatype.nexus.repository.maven.MavenPath;
 import org.sonatype.nexus.repository.maven.MavenPath.Coordinates;
-import org.sonatype.nexus.repository.maven.internal.MavenFacetUtils;
+import org.sonatype.nexus.repository.maven.internal.orient.MavenFacetUtils;
 import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.Context;
 import org.sonatype.nexus.repository.view.Handler;
@@ -36,7 +36,6 @@ import static org.sonatype.nexus.repository.http.HttpMethods.DELETE;
 import static org.sonatype.nexus.repository.http.HttpMethods.GET;
 import static org.sonatype.nexus.repository.http.HttpMethods.HEAD;
 import static org.sonatype.nexus.repository.http.HttpMethods.PUT;
-import static org.sonatype.nexus.repository.maven.internal.MavenFacetUtils.getHashAlgorithmFromContent;
 
 /**
  * Maven hosted handler.
@@ -53,7 +52,7 @@ public class HostedHandler
   @Override
   public Response handle(@Nonnull final Context context) throws Exception {
     MavenPath path = context.getAttributes().require(MavenPath.class);
-    MavenFacet mavenFacet = context.getRepository().facet(MavenFacet.class);
+    OrientMavenFacet mavenFacet = context.getRepository().facet(OrientMavenFacet.class);
     String action = context.getRequest().getAction();
     switch (action) {
       case GET:
@@ -71,17 +70,17 @@ public class HostedHandler
     }
   }
 
-  private Response doGet(final MavenPath path, final MavenFacet mavenFacet) throws IOException {
+  private Response doGet(final MavenPath path, final OrientMavenFacet mavenFacet) throws IOException {
     Content content = mavenFacet.get(path);
     if (content == null) {
       return HttpResponses.notFound(path.getPath());
     }
     AttributesMap attributesMap = content.getAttributes();
-    MavenFacetUtils.mayAddETag(attributesMap, getHashAlgorithmFromContent(attributesMap));
+    MavenFacetUtils.mayAddETag(attributesMap, MavenFacetUtils.getHashAlgorithmFromContent(attributesMap));
     return HttpResponses.ok(content);
   }
 
-  private Response doPut(@Nonnull final Context context, final MavenPath path, final MavenFacet mavenFacet)
+  private Response doPut(@Nonnull final Context context, final MavenPath path, final OrientMavenFacet mavenFacet)
       throws IOException
   {
     if (mavenFacet.layoutPolicy() == LayoutPolicy.STRICT
@@ -93,15 +92,15 @@ public class HostedHandler
     return HttpResponses.created();
   }
 
-  private Response doDelete(final MavenPath path, final MavenFacet mavenFacet) throws IOException {
-    boolean deleted = mavenFacet.delete(path);
+  private Response doDelete(final MavenPath path, final OrientMavenFacet mavenFacet) throws IOException {
+    boolean deleted = !mavenFacet.delete(path).isEmpty();
     if (!deleted) {
       return HttpResponses.notFound(path.getPath());
     }
     return HttpResponses.noContent();
   }
 
-  private boolean isValidSnapshot(Coordinates coordinates) {
+  private boolean isValidSnapshot(final Coordinates coordinates) {
     return coordinates == null || (coordinates.isSnapshot() &&
         !coordinates.getVersion().equals(coordinates.getBaseVersion()) &&
         (coordinates.getTimestamp() == null || coordinates.getBuildNumber() == null));

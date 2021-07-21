@@ -32,8 +32,10 @@ import org.sonatype.nexus.orient.testsupport.DatabaseInstanceRule;
 import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.attributes.internal.AttributesFacetImpl;
+import org.sonatype.nexus.repository.browse.internal.orient.BrowseNodeEntityAdapter;
 import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.config.ConfigurationFacet;
+import org.sonatype.nexus.repository.mime.DefaultContentValidator;
 import org.sonatype.nexus.repository.search.SearchFacet;
 import org.sonatype.nexus.repository.storage.internal.ComponentSchemaRegistration;
 import org.sonatype.nexus.security.ClientInfoProvider;
@@ -62,15 +64,15 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.joda.time.Duration.standardHours;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.common.entity.EntityHelper.id;
+import static org.sonatype.nexus.repository.config.ConfigurationConstants.STORAGE;
 import static org.sonatype.nexus.repository.storage.MetadataNodeEntityAdapter.P_NAME;
-import static org.sonatype.nexus.repository.storage.StorageFacetConstants.STORAGE;
 
 /**
  * Integration tests for {@link StorageFacetImpl}.
@@ -117,7 +119,8 @@ public class StorageFacetImplIT
         database.getInstanceProvider(),
         bucketEntityAdapter,
         componentEntityAdapter,
-        assetEntityAdapter);
+        assetEntityAdapter,
+        mock(BrowseNodeEntityAdapter.class));
 
     schemaRegistration.start();
 
@@ -281,13 +284,13 @@ public class StorageFacetImplIT
       String suffix = "order by name limit 1";
       List<Asset> results = Lists.newArrayList(tx.findAssets(whereClause, parameters, null, suffix));
       checkSize(results, 1);
-      assertThat((String) results.get(0).name(), is("asset1"));
+      assertThat(results.get(0).name(), is("asset1"));
 
       // ..in descending order by name with limit 1, should return asset2
       suffix = "order by name desc limit 1";
       results = Lists.newArrayList(tx.findAssets(whereClause, parameters, null, suffix));
       checkSize(results, 1);
-      assertThat((String) results.get(0).name(), is("asset2"));
+      assertThat(results.get(0).name(), is("asset2"));
     }
   }
 
@@ -313,8 +316,7 @@ public class StorageFacetImplIT
     // Get the asset and make sure it contains what we expect
     try (StorageTx tx = beginTX()) {
       Bucket bucket = tx.findBucket(testRepository1);
-      Asset asset = tx.findAsset(docId, bucket);
-      assert asset != null;
+      Asset asset = checkNotNull(tx.findAsset(docId, bucket));
 
       NestedAttributesMap outputMap = asset.attributes();
 
@@ -537,10 +539,10 @@ public class StorageFacetImplIT
 
   @Test
   public void noDuplicateComponent() throws Exception {
-    createComponent(null, "name", null);
-    createComponent("group", "name", null);
-    createComponent(null, "name", "1");
-    createComponent("group", "name", "1");
+    assertThat(createComponent(null, "name", null), notNullValue());
+    assertThat(createComponent("group", "name", null), notNullValue());
+    assertThat(createComponent(null, "name", "1"), notNullValue());
+    assertThat(createComponent("group", "name", "1"), notNullValue());
   }
 
   @Test(expected = ORecordDuplicatedException.class)
@@ -600,8 +602,8 @@ public class StorageFacetImplIT
   @Test
   public void noDuplicateAsset() throws Exception {
     Component component = createComponent("group", "name", "1");
-    createAsset(component, "name");
-    createAsset(null, "name");
+    assertThat(createAsset(component, "name"), notNullValue());
+    assertThat(createAsset(null, "name"), notNullValue());
   }
 
   @Test(expected = ORecordDuplicatedException.class)
@@ -764,7 +766,7 @@ public class StorageFacetImplIT
       tx.saveComponent(component);
 
       // Correct use of attached entity ids prevent an exception being thrown by this line
-      tx.browseAssets(component);
+      assertThat(tx.browseAssets(component), notNullValue());
     }
   }
 
@@ -814,7 +816,8 @@ public class StorageFacetImplIT
         database.getInstanceProvider(),
         otherBucketEntityAdapter,
         otherComponentEntityAdapter,
-        otherAssetEntityAdapter);
+        otherAssetEntityAdapter,
+        mock(BrowseNodeEntityAdapter.class));
 
     otherSchemaRegistration.start();
 
@@ -850,6 +853,7 @@ public class StorageFacetImplIT
     MimeRulesSourceSelector mimeRulesSourceSelector = new MimeRulesSourceSelector(Collections.emptyMap());
     StorageFacetManager storageFacetManager = mock(StorageFacetManager.class);
     ComponentFactory componentFactory = new ComponentFactory(emptySet());
+    BlobMetadataStorage blobMetadataStorage = new DefaultBlobMetadataStorage();
     StorageFacetImpl storageFacetImpl = new StorageFacetImpl(
         mockNodeAccess,
         mockBlobStoreManager,
@@ -862,7 +866,9 @@ public class StorageFacetImplIT
         mimeRulesSourceSelector,
         storageFacetManager,
         componentFactory,
-        mock(ConstraintViolationFactory.class));
+        mock(ConstraintViolationFactory.class),
+        () -> null,
+        blobMetadataStorage);
     storageFacetImpl.installDependencies(mock(EventManager.class));
 
     storageFacetImpl.attach(repository);

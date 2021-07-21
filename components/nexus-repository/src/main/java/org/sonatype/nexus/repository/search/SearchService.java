@@ -17,10 +17,8 @@ import java.util.List;
 
 import javax.annotation.Nullable;
 
-import org.sonatype.nexus.repository.Repository;
+import org.sonatype.nexus.repository.search.index.SearchIndexService;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Function;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.search.SearchHit;
@@ -33,57 +31,8 @@ import org.elasticsearch.search.sort.SortBuilder;
  * @since 3.0
  */
 public interface SearchService
+    extends SearchIndexService
 {
-
-  /**
-   * Create index for specified repository, if does not already exits.
-   */
-  void createIndex(Repository repository);
-
-  /**
-   * Deletes index for specified repository.
-   */
-  void deleteIndex(Repository repository);
-
-  /**
-   * Rebuilds index for specific reppsitory.
-   */
-  void rebuildIndex(Repository repository);
-
-  /**
-   * Puts data with given identifier into index of given repository.
-   */
-  void put(Repository repository, String identifier, String json);
-
-  /**
-   * Operation used for bulk updating of component index.
-   *
-   * @param repository the source repository
-   * @param components an {@link Iterable} of components to index
-   * @param identifierProducer a function producing an identifier for a component (never returning null)
-   * @param jsonDocumentProducer a function producing a json document for the component (never returning null)
-   *
-   * @since 3.4
-   */
-  <T> void bulkPut(Repository repository, Iterable<T> components,
-                   Function<T, String> identifierProducer,
-                   Function<T, String> jsonDocumentProducer);
-
-  /**
-   * Removes data with given identifier from index of given repository.
-   */
-  void delete(Repository repository, String identifier);
-
-  /**
-   * Operation used for bulk removal of data from index of given repository.
-   *
-   * @param repository the source repository (if known)
-   * @param identifiers the ids of documents to remove
-   *
-   * @since 3.4
-   */
-  void bulkDelete(@Nullable Repository repository, Iterable<String> identifiers);
-
   /**
    * Search component metadata and browse results, without the effect of content selectors.
    *
@@ -110,7 +59,11 @@ public interface SearchService
    *
    * @since 3.1
    */
-  SearchResponse search(QueryBuilder query, @Nullable List<SortBuilder> sort, int from, int size, Integer timeout);
+  SearchResponse search(QueryBuilder query,
+                        @Nullable List<SortBuilder> sort,
+                        int from,
+                        int size,
+                        @Nullable Integer timeout);
 
   /**
    * Search component metadata and browse results with content selectors applied.
@@ -124,11 +77,18 @@ public interface SearchService
    *
    * @since 3.14
    */
-  SearchResponse searchUnrestrictedInRepos(final QueryBuilder query,
-                                           @Nullable final List<SortBuilder> sort,
-                                           final int from,
-                                           final int size,
+  SearchResponse searchUnrestrictedInRepos(QueryBuilder query,
+                                           @Nullable List<SortBuilder> sort,
+                                           int from,
+                                           int size,
                                            Collection<String> repoNames);
+  /**
+   * @since 3.24
+   */
+  SearchResponse searchUnrestrictedInReposWithAggregations(QueryBuilder query,
+                                                           List<AggregationBuilder> aggregations,
+                                                           @Nullable List<SortBuilder> sort,
+                                                           Collection<String> repoNames);
 
   /**
    * Search component metadata and browse results using aggregations with content selectors applied.
@@ -145,29 +105,4 @@ public interface SearchService
    * @since 3.1
    */
   long countUnrestricted(QueryBuilder query);
-
-  /**
-   * Flush any pending bulk index requests.
-   *
-   * @since 3.4
-   */
-  void flush(boolean fsync);
-
-  /**
-   * Used by UTs and ITs only to "wait for calm period" when all search indexing is finished.
-   *
-   * @since 3.13
-   */
-  @VisibleForTesting
-  boolean isCalmPeriod();
-
-  void waitForCalm();
-
-  /**
-   * Used by ITs to check the frequency of search updates.
-   *
-   * @since 3.17
-   */
-  @VisibleForTesting
-  long getUpdateCount();
 }

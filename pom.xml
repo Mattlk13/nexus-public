@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.sonatype.buildsupport</groupId>
     <artifactId>public-parent</artifactId>
-    <version>10</version>
+    <version>19</version>
     <relativePath/>
   </parent>
 
@@ -29,7 +29,7 @@
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>pom</packaging>
 
-  <version>3.21.0-SNAPSHOT</version>
+  <version>3.33.0-SNAPSHOT</version>
 
   <inceptionYear>2008</inceptionYear>
   <url>http://nexus.sonatype.org/</url>
@@ -52,32 +52,6 @@
     <url>https://github.com/sonatype/nexus-public</url>
   </scm>
 
-  <repositories>
-    <repository>
-      <id>rso-public-grid</id>
-      <url>https://repository.sonatype.org/content/groups/sonatype-public-grid/</url>
-      <releases>
-        <enabled>true</enabled>
-      </releases>
-      <snapshots>
-        <enabled>true</enabled>
-      </snapshots>
-    </repository>
-  </repositories>
-
-  <pluginRepositories>
-    <pluginRepository>
-      <id>rso-public-grid</id>
-      <url>https://repository.sonatype.org/content/groups/sonatype-public-grid/</url>
-      <releases>
-        <enabled>true</enabled>
-      </releases>
-      <snapshots>
-        <enabled>true</enabled>
-      </snapshots>
-    </pluginRepository>
-  </pluginRepositories>
-
   <prerequisites>
     <!-- Mostly meaningless, though site plugin uses this; Minimum version controlled by enforcer plugin -->
     <maven>3.3.3</maven>
@@ -88,13 +62,17 @@
     Define nexus versions.  The 'nexus.version' property always refers to the version of the current project.
     These values must always be constants; 'nexus.version' will get update automatically by set-version.
     -->
-    <nexus.version>3.21.0-SNAPSHOT</nexus.version>
-    <nexus2.version>2.14.15-01</nexus2.version>
+    <nexus.version>3.33.0-SNAPSHOT</nexus.version>
+    <nexus2.version>2.14.20-02</nexus2.version>
 
-    <!-- Define the node and npm versions used by the frontend-maven-plugin -->
-    <node.version>v11.15.0</node.version>
-    <npm.version>6.7.0</npm.version>
-    <npm.install>ci</npm.install>
+    <karaf.version>4.3.2</karaf.version>
+
+    <!-- Define the node and yarn versions used by the frontend-maven-plugin -->
+    <node.version>v12.14.0</node.version>
+    <yarn.version>v1.22.0</yarn.version>
+    <npm.install>install --frozen-lockfile</npm.install>
+    <npm.skipTests>false</npm.skipTests>
+    <npm.build>build-all</npm.build>
 
     <!-- logging configuration used in logback config files to control test logging -->
     <test.log.level>INFO</test.log.level>
@@ -110,6 +88,7 @@
     Sonar configuration.
     -->
     <sonar.branch>3.0</sonar.branch>
+    <sonar.nodejs.executable>/opt/zion/bundles/tools/nodejs/node-v11.1.0-linux-x64/bin/node</sonar.nodejs.executable>
 
     <!--
     Default optimization settings for optimized "prod" aggregate sources.
@@ -126,7 +105,16 @@
     <staging.progressTimeout>60</staging.progressTimeout>
 
     <it.includes>**/*IT.*</it.includes>
-    <it.excludedGroups>org.sonatype.goodies.testsupport.group.Perf,org.sonatype.goodies.testsupport.group.External,org.sonatype.goodies.testsupport.group.Unstable</it.excludedGroups>
+    <it.excludedGroups>
+      org.sonatype.goodies.testsupport.group.Perf,
+      org.sonatype.goodies.testsupport.group.External,
+      org.sonatype.goodies.testsupport.group.Unstable,
+      org.sonatype.nexus.content.testsuite.groups.SQLTestGroup
+    </it.excludedGroups>
+    <clm.skip>true</clm.skip>
+
+    <!-- fabric8 container naming pattern: {imageName}-{buildTimestamp}-{index} -->
+    <docker.containerNamePattern>%n-%t-%i</docker.containerNamePattern>
   </properties>
 
   <modules>
@@ -148,97 +136,103 @@
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-audit</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-base</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-blobstore</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-blobstore-api</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-blobstore-file</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-bootstrap</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-capability</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-cleanup</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.sonatype.nexus</groupId>
+        <artifactId>nexus-cleanup-config</artifactId>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-commands</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-common</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-core</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-crypto</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-datastore</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-datastore-api</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-datastore-mybatis</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-datastore-mybatis</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
         <classifier>features</classifier>
         <type>xml</type>
       </dependency>
@@ -246,13 +240,13 @@
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-orient</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-orient</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
         <classifier>features</classifier>
         <type>xml</type>
       </dependency>
@@ -260,97 +254,97 @@
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-orient-console</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-cache</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-elasticsearch</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-email</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-extdirect</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-extender</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-features</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-httpclient</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-jmx</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-scheduling</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-formfields</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-guice-servlet</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-main</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-mime</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-oss-edition</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-oss-edition</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
         <classifier>features</classifier>
         <type>xml</type>
       </dependency>
@@ -358,166 +352,184 @@
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-pax-logging</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-plugin-api</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-quartz</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-rapture</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-rapture</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
         <classifier>sources</classifier>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-repository</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-repository</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
         <classifier>tests</classifier>
         <scope>test</scope>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
+        <artifactId>nexus-repository-config</artifactId>
+        <version>3.33.0-SNAPSHOT</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-repository-content</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.sonatype.nexus</groupId>
+        <artifactId>nexus-repository-services</artifactId>
+        <version>3.33.0-SNAPSHOT</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.sonatype.nexus</groupId>
+        <artifactId>nexus-repository-view</artifactId>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-rest</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-rest-client</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-rest-jackson2</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-script</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-security</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-selector</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-servlet</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-siesta</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-ssl</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-supportzip-api</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-swagger</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-task-logging</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-thread</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-transaction</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-ui-plugin</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-upgrade</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-validation</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-webhooks</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-webresources-api</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <!-- testsupport -->
@@ -525,19 +537,25 @@
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-pax-exam</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-test-common</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <dependency>
         <groupId>org.sonatype.nexus</groupId>
         <artifactId>nexus-test-db</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.sonatype.nexus</groupId>
+        <artifactId>nexus-testsupport</artifactId>
+        <version>3.33.0-SNAPSHOT</version>
       </dependency>
 
       <!-- assemblies -->
@@ -545,7 +563,7 @@
       <dependency>
         <groupId>org.sonatype.nexus.assemblies</groupId>
         <artifactId>nexus-startup-feature</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
         <classifier>features</classifier>
         <type>xml</type>
       </dependency>
@@ -553,7 +571,7 @@
       <dependency>
         <groupId>org.sonatype.nexus.assemblies</groupId>
         <artifactId>nexus-boot-feature</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
         <classifier>features</classifier>
         <type>xml</type>
       </dependency>
@@ -561,7 +579,7 @@
       <dependency>
         <groupId>org.sonatype.nexus.assemblies</groupId>
         <artifactId>nexus-base-feature</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
         <classifier>features</classifier>
         <type>xml</type>
       </dependency>
@@ -569,7 +587,7 @@
       <dependency>
         <groupId>org.sonatype.nexus.assemblies</groupId>
         <artifactId>nexus-core-feature</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
         <classifier>features</classifier>
         <type>xml</type>
       </dependency>
@@ -577,7 +595,7 @@
       <dependency>
         <groupId>org.sonatype.nexus.assemblies</groupId>
         <artifactId>nexus-cma-feature</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
         <classifier>features</classifier>
         <type>xml</type>
       </dependency>
@@ -585,7 +603,7 @@
       <dependency>
         <groupId>org.sonatype.nexus.assemblies</groupId>
         <artifactId>nexus-base-template</artifactId>
-        <version>3.21.0-SNAPSHOT</version>
+        <version>3.33.0-SNAPSHOT</version>
         <type>zip</type>
       </dependency>
 
@@ -706,11 +724,8 @@
           <artifactId>animal-sniffer-maven-plugin</artifactId>
           <version>1.16</version>
           <configuration>
-            <!--
-            TODO: Replace with signature from project after fixed: https://github.com/mojohaus/animal-sniffer/issues/1
-            -->
             <signature>
-              <groupId>org.kaazing.mojo.signature</groupId>
+              <groupId>org.codehaus.mojo.signature</groupId>
               <artifactId>java18</artifactId>
               <version>1.0</version>
             </signature>
@@ -769,13 +784,13 @@
         <plugin>
           <groupId>org.apache.felix</groupId>
           <artifactId>maven-bundle-plugin</artifactId>
-          <version>3.3.0</version>
-          <!-- We need to force biz.aQute.bndlib to 3.5.0 because of https://issues.apache.org/jira/browse/FELIX-5698 -->
+          <version>4.2.1</version>
           <dependencies>
+            <!-- bndlib 4.3.1 has several performance improvements -->
             <dependency>
               <groupId>biz.aQute.bnd</groupId>
               <artifactId>biz.aQute.bndlib</artifactId>
-              <version>3.5.0</version>
+              <version>4.3.1</version>
             </dependency>
           </dependencies>
           <extensions>true</extensions>
@@ -793,13 +808,17 @@
               <Feature-Flagged>
                 $(classes;ANNOTATED;org.sonatype.nexus.common.app.FeatureFlag)
               </Feature-Flagged>
-              <!-- workaround CGLIB issue when method intercepting subclasses in different modules -->
+              <!-- extra imports needed to extend and then proxy certain types across modules -->
               <Import-Package>
                 $(if;$(classes;EXTENDS;*.FacetSupport);org.sonatype.nexus.repository.config),
                 $(if;$(classes;EXTENDS;*.(Blob|Data)StoreSupport);org.sonatype.nexus.transaction),
-                org.sonatype.nexus.orient*|com.orientechnologies*;resolution:=optional,
+                $(if;$(classes;EXTENDS;*.ContentFacetSupport);org.sonatype.nexus.repository.content,org.sonatype.nexus.transaction),
+                $(if;$(classes;IMPLEMENTS;*.ContentRepositoryDAO);org.sonatype.nexus.common.entity),
+                $(if;$(classes;IMPLEMENTS;*.AssetBlobDAO);org.sonatype.nexus.blobstore.api),
                 *
               </Import-Package>
+              <!-- match previous plugin behaviour: turn off scanning for Class.forName usage -->
+              <_noclassforname>true</_noclassforname>
             </instructions>
           </configuration>
         </plugin>
@@ -810,7 +829,7 @@
         <plugin>
           <groupId>org.apache.karaf.tooling</groupId>
           <artifactId>karaf-maven-plugin</artifactId>
-          <version>4.2.6</version>
+          <version>${karaf.version}</version>
           <extensions>true</extensions>
           <configuration>
             <excludedArtifactIds>
@@ -819,17 +838,23 @@
               -->
               <id>org.osgi.core</id>
               <id>org.osgi.compendium</id>
+              <id>osgi.core</id>
+              <id>osgi.cmpn</id>
               <id>org.eclipse.osgi</id>
               <id>activation</id>
               <id>javax.annotation</id>
               <id>javax.annotation-api</id>
               <id>jboss-annotations-api_1.1_spec</id>
+              <id>jboss-annotations-api_1.2_spec</id>
+              <id>jboss-annotations-api_1.3_spec</id>
               <id>javax.inject</id>
               <id>aopalliance</id>
               <id>javax.ws.rs</id>
-              <id>jaxb-api</id>
-              <id>jaxb-core</id>
-              <id>jaxb-impl</id>
+              <id>javax.ws.rs-api</id>
+              <id>jakarta.xml.bind-api</id>
+              <id>jaxb-runtime</id>
+              <id>txw2</id>
+              <id>istack-commons-runtime</id>
               <id>jsr250-api</id>
               <id>jsr305</id>
               <id>slf4j-api</id>
@@ -839,9 +864,9 @@
               <id>logback-core</id>
               <id>logback-classic</id>
               <id>jboss-logging</id>
-              <id>bcprov-jdk15on</id>
-              <id>bcpkix-jdk15on</id>
-              <id>bcpg-jdk15on</id>
+              <id>bcprov-jdk15to18</id>
+              <id>bcpkix-jdk15to18</id>
+              <id>bcpg-jdk15to18</id>
               <id>directjngine</id>
               <id>validation-api</id>
               <!--
@@ -852,6 +877,7 @@
               <id>paranamer</id>
               <id>httpcore</id>
               <id>httpclient</id>
+              <id>shiro-guice</id>
               <id>metrics-guice</id>
               <id>simpleclient_dropwizard</id>
               <id>quartz</id>
@@ -860,8 +886,10 @@
               <id>resteasy-jackson2-provider</id>
               <id>resteasy-jaxb-provider</id>
               <id>resteasy-multipart-provider</id>
-              <id>resteasy-validator-provider-11</id>
+              <id>resteasy-validator-provider</id>
               <id>resteasy-client</id>
+              <id>jackson-coreutils</id>
+              <id>json-patch</id>
               <id>swagger-core</id>
               <id>swagger-jaxrs</id>
             </excludedArtifactIds>
@@ -888,7 +916,7 @@
         <plugin>
           <groupId>org.sonatype.nexus.buildsupport</groupId>
           <artifactId>extjs-maven-plugin</artifactId>
-          <version>3.21.0-SNAPSHOT</version>
+          <version>3.33.0-SNAPSHOT</version>
           <executions>
             <execution>
               <goals>
@@ -902,36 +930,6 @@
                   <assert>${extjs.omit.assert}</assert>
                 </omitFlags>
               </configuration>
-            </execution>
-          </executions>
-        </plugin>
-
-        <plugin>
-          <groupId>com.github.klieber</groupId>
-          <artifactId>phantomjs-maven-plugin</artifactId>
-          <version>0.7</version>
-          <executions>
-            <execution>
-              <goals>
-                <goal>install</goal>
-              </goals>
-            </execution>
-          </executions>
-          <configuration>
-            <version>2.1.1</version>
-          </configuration>
-        </plugin>
-
-        <plugin>
-          <groupId>com.github.searls</groupId>
-          <artifactId>jasmine-maven-plugin</artifactId>
-          <version>2.2</version>
-          <extensions>true</extensions>
-          <executions>
-            <execution>
-              <goals>
-                <goal>test</goal>
-              </goals>
             </execution>
           </executions>
         </plugin>
@@ -977,6 +975,59 @@
           <groupId>com.github.eirslett</groupId>
           <artifactId>frontend-maven-plugin</artifactId>
           <version>1.8.0</version>
+
+          <configuration>
+            <nodeVersion>${node.version}</nodeVersion>
+            <yarnVersion>${yarn.version}</yarnVersion>
+            <workingDirectory>${project.basedir}</workingDirectory>
+            <installDirectory>${project.build.directory}</installDirectory>
+            <environmentVariables>
+              <JEST_SUITE_NAME>React-Tests</JEST_SUITE_NAME>
+              <JEST_JUNIT_OUTPUT_NAME>TEST-react-jest.xml</JEST_JUNIT_OUTPUT_NAME>
+              <JEST_JUNIT_OUTPUT_DIR>${project.build.directory}/jest-reports/</JEST_JUNIT_OUTPUT_DIR>
+              <CI>true</CI>
+            </environmentVariables>
+          </configuration>
+
+          <executions>
+            <execution>
+              <id>install node and yarn</id>
+              <goals>
+                <goal>install-node-and-yarn</goal>
+              </goals>
+              <phase>generate-resources</phase>
+            </execution>
+            <execution>
+              <id>yarn cache clean</id>
+              <goals>
+                <goal>yarn</goal>
+              </goals>
+              <phase>generate-resources</phase>
+              <configuration>
+                <arguments>cache clean</arguments>
+              </configuration>
+            </execution>
+            <execution>
+              <id>yarn install</id>
+              <goals>
+                <goal>yarn</goal>
+              </goals>
+              <phase>generate-resources</phase>
+              <configuration>
+                <arguments>${npm.install}</arguments>
+              </configuration>
+            </execution>
+            <execution>
+              <id>yarn run build</id>
+              <goals>
+                <goal>yarn</goal>
+              </goals>
+              <phase>compile</phase>
+              <configuration>
+                <arguments>${npm.build}</arguments>
+              </configuration>
+            </execution>
+          </executions>
         </plugin>
 
         <!--
@@ -1040,7 +1091,7 @@
               <!--
               Exclude npm dependencies
               -->
-              <exclude>**/nexus-*/node_modules/**</exclude>
+              <exclude>**/node_modules/**</exclude>
 
               <!--
               Exclude files generated by javascript builds
@@ -1054,8 +1105,18 @@
               <exclude>**/nexus-ssl/**/org/sonatype/nexus/ssl/keystore/internal/geronimo/**</exclude>
               <exclude>**/nexus-repository-apt/**/org/sonatype/nexus/repository/apt/internal/org/apache/commons/compress/archivers/ar/ArArchiveInputStream.java</exclude>
 
+              <!--
+              JS files will include the extjs specific header, see header-extjs profile below
+              -->
+              <exclude>**/*.js</exclude>
             </excludes>
           </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>io.fabric8</groupId>
+          <artifactId>docker-maven-plugin</artifactId>
+          <version>0.33.0</version>
         </plugin>
       </plugins>
     </pluginManagement>
@@ -1111,6 +1172,11 @@
                     SISU Velocity is banned
                     -->
                     <exclude>org.sonatype.sisu:sisu-velocity</exclude>
+
+                    <!--
+                    Merged into guice core
+                    -->
+                    <exclude>com.google.inject.extensions:guice-multibindings:*</exclude>
 
                     <!--
                     Conflicts with slf4j.
@@ -1220,6 +1286,13 @@
                     Ban old javax.mail
                     -->
                     <exclude>javax.mail:mail:*</exclude>
+
+                    <!--
+                    Ban old jaxb
+                    -->
+                    <exclude>javax.xml.bind:jaxb-api:*</exclude>
+                    <exclude>com.sun.xml.bind:jaxb-core:*</exclude>
+                    <exclude>com.sun.xml.bind:jaxb-impl:*</exclude>
                   </excludes>
 
                   <!--
@@ -1239,6 +1312,22 @@
                 </bannedDependencies>
               </rules>
             </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>com.sonatype.clm</groupId>
+        <artifactId>clm-maven-plugin</artifactId>
+        <version>2.16.0-01</version>
+        <configuration>
+          <skip>${clm.skip}</skip>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>index</goal>
+            </goals>
           </execution>
         </executions>
       </plugin>
@@ -1314,7 +1403,7 @@
 
     <!--
     When this profile is used it is intended to run tests that are flaky / unstable
-    Any ITs that fail often should be annotated with 
+    Any ITs that fail often should be annotated with
     <code>@Category(org.sonatype.goodies.testsupport.group.Unstable)</code> until they can be worked on and improved.
     This makes it clear which tests are likely to fail regardless of your changes and also makes it easier to rerun
     only those tests which sometimes fail.
@@ -1337,6 +1426,248 @@
             <configuration combine.children="override">
               <groups>org.sonatype.goodies.testsupport.group.Unstable</groups>
               <excludedGroups>org.sonatype.goodies.testsupport.group.Perf,org.sonatype.goodies.testsupport.group.External</excludedGroups>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>orient-h2-unit-tests</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration combine.children="override">
+              <excludedGroups>
+                org.sonatype.nexus.content.testsuite.groups.PostgresTestGroup,
+                org.sonatype.goodies.testsupport.group.Unstable,
+                org.sonatype.goodies.testsupport.group.Perf,
+                org.sonatype.goodies.testsupport.group.External
+              </excludedGroups>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration combine.children="override">
+              <excludedGroups>
+                org.sonatype.nexus.content.testsuite.groups.PostgresTestGroup,
+                org.sonatype.goodies.testsupport.group.Unstable,
+                org.sonatype.goodies.testsupport.group.Perf,
+                org.sonatype.goodies.testsupport.group.External
+              </excludedGroups>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>postgres-unit-tests</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration combine.children="override">
+              <excludedGroups>
+                org.sonatype.nexus.content.testsuite.groups.OrientTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.H2TestGroup,
+                org.sonatype.goodies.testsupport.group.Unstable,
+                org.sonatype.goodies.testsupport.group.Perf,
+                org.sonatype.goodies.testsupport.group.External
+              </excludedGroups>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration combine.children="override">
+              <excludedGroups>
+                org.sonatype.nexus.content.testsuite.groups.OrientTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.H2TestGroup,
+                org.sonatype.goodies.testsupport.group.Unstable,
+                org.sonatype.goodies.testsupport.group.Perf,
+                org.sonatype.goodies.testsupport.group.External
+              </excludedGroups>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>h2-integration-tests</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration combine.children="override">
+              <groups>
+                org.sonatype.nexus.content.testsuite.groups.SQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.OrientAndSQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.H2TestGroup
+              </groups>
+              <excludedGroups>
+                org.sonatype.nexus.content.testsuite.groups.OrientTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.PostgresTestGroup,
+                org.sonatype.goodies.testsupport.group.Unstable,
+                org.sonatype.goodies.testsupport.group.Perf,
+                org.sonatype.goodies.testsupport.group.External
+              </excludedGroups>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration combine.children="override">
+              <groups>
+                org.sonatype.nexus.content.testsuite.groups.SQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.OrientAndSQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.H2TestGroup
+              </groups>
+              <excludedGroups>
+                org.sonatype.nexus.content.testsuite.groups.OrientTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.PostgresTestGroup,
+                org.sonatype.goodies.testsupport.group.Unstable,
+                org.sonatype.goodies.testsupport.group.Perf,
+                org.sonatype.goodies.testsupport.group.External
+              </excludedGroups>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>postgres-integration-tests</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration combine.children="override">
+              <groups>
+                org.sonatype.nexus.content.testsuite.groups.SQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.OrientAndSQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.PostgresTestGroup
+              </groups>
+              <excludedGroups>
+                org.sonatype.nexus.content.testsuite.groups.OrientTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.H2TestGroup,
+                org.sonatype.goodies.testsupport.group.Unstable,
+                org.sonatype.goodies.testsupport.group.Perf,
+                org.sonatype.goodies.testsupport.group.External
+              </excludedGroups>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration combine.children="override">
+              <groups>
+                org.sonatype.nexus.content.testsuite.groups.SQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.OrientAndSQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.PostgresTestGroup
+              </groups>
+              <excludedGroups>
+                org.sonatype.nexus.content.testsuite.groups.OrientTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.H2TestGroup,
+                org.sonatype.goodies.testsupport.group.Unstable,
+                org.sonatype.goodies.testsupport.group.Perf,
+                org.sonatype.goodies.testsupport.group.External
+              </excludedGroups>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>h2-external-resources</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration combine.children="override">
+              <groups>
+                org.sonatype.nexus.content.testsuite.groups.SQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.OrientAndSQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.H2TestGroup,
+                org.sonatype.goodies.testsupport.group.External
+              </groups>
+              <excludedGroups>
+                org.sonatype.nexus.content.testsuite.groups.OrientTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.PostgresTestGroup,
+                org.sonatype.goodies.testsupport.group.Unstable,
+                org.sonatype.goodies.testsupport.group.Perf
+              </excludedGroups>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration combine.children="override">
+              <groups>
+                org.sonatype.nexus.content.testsuite.groups.SQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.OrientAndSQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.H2TestGroup,
+                org.sonatype.goodies.testsupport.group.External
+              </groups>
+              <excludedGroups>
+                org.sonatype.nexus.content.testsuite.groups.OrientTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.PostgresTestGroup,
+                org.sonatype.goodies.testsupport.group.Unstable,
+                org.sonatype.goodies.testsupport.group.Perf
+              </excludedGroups>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>postgres-external-resources</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration combine.children="override">
+              <groups>
+                org.sonatype.nexus.content.testsuite.groups.SQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.OrientAndSQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.PostgresTestGroup,
+                org.sonatype.goodies.testsupport.group.External
+              </groups>
+              <excludedGroups>
+                org.sonatype.nexus.content.testsuite.groups.OrientTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.H2TestGroup,
+                org.sonatype.goodies.testsupport.group.Unstable,
+                org.sonatype.goodies.testsupport.group.Perf
+              </excludedGroups>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration combine.children="override">
+              <groups>
+                org.sonatype.nexus.content.testsuite.groups.SQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.OrientAndSQLTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.PostgresTestGroup,
+                org.sonatype.goodies.testsupport.group.External
+              </groups>
+              <excludedGroups>
+                org.sonatype.nexus.content.testsuite.groups.OrientTestGroup,
+                org.sonatype.nexus.content.testsuite.groups.H2TestGroup,
+                org.sonatype.goodies.testsupport.group.Unstable,
+                org.sonatype.goodies.testsupport.group.Perf
+              </excludedGroups>
             </configuration>
           </plugin>
         </plugins>
@@ -1733,11 +2064,12 @@
                     </pluginExecution>
                     <pluginExecution>
                       <pluginExecutionFilter>
-                        <groupId>com.github.klieber</groupId>
-                        <artifactId>phantomjs-maven-plugin</artifactId>
+                        <groupId>com.github.eirslett</groupId>
+                        <artifactId>frontend-maven-plugin</artifactId>
                         <versionRange>[0.7,)</versionRange>
                         <goals>
-                          <goal>install</goal>
+                          <goal>install-node-and-yarn</goal>
+                          <goal>yarn</goal>
                         </goals>
                       </pluginExecutionFilter>
                       <action>
@@ -1746,6 +2078,91 @@
                     </pluginExecution>
                   </pluginExecutions>
                 </lifecycleMappingMetadata>
+              </configuration>
+            </plugin>
+          </plugins>
+        </pluginManagement>
+      </build>
+    </profile>
+
+    <profile>
+      <!-- Make the npm test executions aware of the skipTests property -->
+      <id>skipNpmTests-skipTests</id>
+      <activation>
+        <property>
+          <name>skipTests</name>
+        </property>
+      </activation>
+      <properties>
+        <npm.skipTests>true</npm.skipTests>
+      </properties>
+    </profile>
+
+    <profile>
+      <!-- Make the npm test executions aware of the maven.test.skip property -->
+      <id>skipNpmTests-maven.test.skip</id>
+      <activation>
+        <property>
+          <name>maven.test.skip</name>
+        </property>
+      </activation>
+      <properties>
+        <npm.skipTests>true</npm.skipTests>
+      </properties>
+    </profile>
+
+    <profile>
+      <id>header-extjs</id>
+      <build>
+        <pluginManagement>
+          <plugins>
+            <plugin>
+              <groupId>com.mycila</groupId>
+              <artifactId>license-maven-plugin</artifactId>
+              <version>2.11</version>
+              <configuration>
+                <header>${basedir}/header-extjs.txt</header>
+                <includes>**/*.js</includes>
+                <excludes combine.self="override">
+                  <exclude>**/target/**</exclude>
+                  <!--
+                  Exclude optional private bits.
+                  -->
+                  <exclude>private/**</exclude>
+
+                  <!--
+                  Exclude assembly overlay files
+                  -->
+                  <exclude>assemblies/**/src/main/resources/overlay/**</exclude>
+
+                  <!--
+                  Exclude (most) test resource files, many of these need specific content w/o headers.
+                  -->
+                  <exclude>**/src/test/resources/**</exclude>
+                  <exclude>**/src/test/filtered-resources/**</exclude>
+                  <exclude>**/src/test/it-resources/**</exclude>
+
+                  <!--
+                  Exclude rapture configuration, generated and thirdparty resources.
+                  -->
+                  <exclude>**/nexus-rapture/src/main/baseapp/**</exclude>
+                  <exclude>**/nexus-rapture/src/main/resources/static/rapture/baseapp-*.js</exclude>
+                  <exclude>**/nexus-rapture/src/main/resources/static/rapture/d3.v4.min.js</exclude>
+                  <exclude>**/nexus-rapture/src/main/resources/static/rapture/resources/baseapp-*.css</exclude>
+                  <exclude>**/nexus-rapture/src/main/resources-filtered/static/rapture/resources/baseapp-*.css</exclude>
+                  <exclude>**/nexus-rapture/src/main/resources/static/rapture/Ext/ux/**</exclude>
+                  <exclude>**/nexus-rapture/src/main/resources/static/rapture/Ext/patch/**</exclude>
+
+                  <!--
+                  Exclude npm dependencies
+                  -->
+                  <exclude>**/node_modules/**</exclude>
+
+                  <!--
+                  Exclude files generated by javascript builds
+                  -->
+                  <exclude>**/nexus-ui-plugin/dist/**</exclude>
+                </excludes>
               </configuration>
             </plugin>
           </plugins>

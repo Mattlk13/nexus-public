@@ -12,10 +12,14 @@
  */
 package org.sonatype.nexus.scheduling;
 
+import java.util.Map;
+
 import javax.annotation.Nullable;
 
 import org.sonatype.nexus.scheduling.schedule.Now;
 import org.sonatype.nexus.scheduling.schedule.Schedule;
+
+import static java.util.Collections.emptyMap;
 
 /**
  * The class holding information about task at the moment the instance of task info was created.
@@ -99,6 +103,12 @@ public interface TaskInfo
   }
 
   /**
+   * Returns the result object last returned by the task.
+   */
+  @Nullable
+  Object getLastResult();
+
+  /**
    * Removes (with canceling if runs) the task.
    *
    * Returns {@code true} if it's guaranteed that the task is removed from scheduler, and no future executions of
@@ -140,4 +150,13 @@ public interface TaskInfo
    */
   @Nullable
   String getTriggerSource();
+
+  /**
+   * Currently this context is passed through as-is to analytics, keep this in mind when adding data to the map
+   *
+   * @since 3.24
+   */
+  default Map<String, Object> getContext() {
+    return emptyMap();
+  }
 }

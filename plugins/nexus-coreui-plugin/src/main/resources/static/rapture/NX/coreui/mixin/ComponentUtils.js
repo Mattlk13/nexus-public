@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -34,60 +38,14 @@ Ext.define('NX.coreui.mixin.ComponentUtils', {
     var me = this,
         componentModel = me.fetchComponentModelFromView();
 
-    function doOpenAnalyzeWindow(response) {
-      var widget = Ext.widget('nx-coreui-component-analyze-window');
-      var form = widget.down('form');
-      form.getForm().setValues(response.data);
-      //I am setting the original value so it won't be marked dirty unless user touches it
-      form.down('textfield[name="reportLabel"]').originalValue = response.data.reportLabel;
-
-      var assetKeys = response.data.assetMap ? Ext.Object.getKeys(response.data.assetMap) : [];
-
-      if (assetKeys.length < 1) {
-        widget.close();
-        NX.Dialogs.showError(NX.I18n.get('AnalyzeApplicationWindow_No_Assets_Error_Title'),
-            NX.I18n.get('AnalyzeApplicationWindow_No_Assets_Error_Message'));
-      }
-      else if (assetKeys.length === 1) {
-        widget.down('combo[name="asset"]').setValue(response.data.selectedAsset);
-      }
-      else {
-        var data = [];
-        for (var i = 0; i < assetKeys.length; i++) {
-          data.push([assetKeys[i], response.data.assetMap[assetKeys[i]]]);
-        }
-        var combo = widget.down('combo[name="asset"]');
-        combo.getStore().loadData(data, false);
-        combo.setValue(response.data.selectedAsset);
-        combo.show();
-      }
-    }
-
-    me.getRootContainer().getEl().mask(NX.I18n.get('AnalyzeApplicationWindow_Loading_Mask'));
-    NX.direct.ahc_Component.getPredefinedValues(JSON.stringify(componentModel.getData()), function(response) {
-      me.getRootContainer().getEl().unmask();
-      if (Ext.isObject(response) && response.success) {
-        if (response.data.tosAccepted) {
-          doOpenAnalyzeWindow(response);
-        }
-        else {
-          Ext.widget('nx-coreui-healthcheck-eula', {
-            acceptFn: function() {
-              NX.direct.ahc_Component.acceptTermsOfService(function() {
-                doOpenAnalyzeWindow(response);
-              });
-            }
-          });
-        }
-      }
-    });
+    Ext.widget('nx-coreui-component-analyze-window', {component: componentModel.getData()});
   },
 
   updateAnalyzeButton: function(componentModel) {
     var user = NX.State.getUser(),
         analyzeApplicationButton = this.getAnalyzeApplicationButton();
 
-    if (!componentModel) {
+    if (!componentModel || !NX.direct.ahc_Component) {
       analyzeApplicationButton.disable();
     }
     else if (user && user.authenticated) {
@@ -105,6 +63,31 @@ Ext.define('NX.coreui.mixin.ComponentUtils', {
     }
     else {
       analyzeApplicationButton.disableWithTooltip(NX.I18n.get('AnalyzeApplication_Button_Unauthenticated'));
+    }
+  },
+
+  viewVulnerabilities: function() {
+    var info = this.getComponentInfo || this.getComponentAssetInfo;
+    var vulnerabilityPanel = info().getVulnerabilityPanel();
+    if (vulnerabilityPanel) {
+      window.open(vulnerabilityPanel.referenceLink);
+    }
+  },
+
+  updateVulnerabilitiesButton: function(panel, vulnerabilityInfo) {
+    var viewVulnerabilitiesButton = panel.getViewVulnerabilitiesButton();
+    if(vulnerabilityInfo) {
+      viewVulnerabilitiesButton.setVisible(true);
+      if (vulnerabilityInfo.count > 0) {
+        viewVulnerabilitiesButton.setText(
+            NX.I18n.format('ComponentDetails_View_Vulnerabilities_Count_Button', vulnerabilityInfo.count));
+      }
+      else {
+        viewVulnerabilitiesButton.setText(NX.I18n.get('ComponentDetails_View_Vulnerabilities_Button'));
+      }
+    }
+    else {
+      viewVulnerabilitiesButton.setVisible(false);
     }
   },
 
@@ -233,8 +216,14 @@ Ext.define('NX.coreui.mixin.ComponentUtils', {
       case 'folder':
         return iconController.findIcon('tree-folder', 'x16');
       case 'component':
+        if('OSS' === NX.State.getEdition() && asset.get('vulnerable')) {
+          return iconController.findIcon('vulnerability', 'x16');
+        }
         return iconController.findIcon('tree-component', 'x16');
       case 'asset':
+        if('OSS' === NX.State.getEdition() && asset.get('vulnerable')) {
+          return iconController.findIcon('vulnerability', 'x16');
+        }
         var assetName = asset.get('text');
         var icon = me.getIconForAssetName(assetName);
         if (icon) {

@@ -51,7 +51,7 @@ class NestedAttributesMapTest
   }
 
   @Test
-  void 'qualifiedKey w/o parent returns key'() {
+  void 'qualifiedKey without parent returns key'() {
     assert "foo" == underTest.qualifiedKey
   }
 
@@ -59,17 +59,6 @@ class NestedAttributesMapTest
   void 'qualifiedKey includes parent'() {
     assert "foo${SEPARATOR}bar" == underTest.child('bar').qualifiedKey
     assert "foo${SEPARATOR}bar${SEPARATOR}baz" == underTest.child('bar').child('baz').qualifiedKey
-  }
-
-  @Test
-  void 'set with map value fails'() {
-    try {
-      underTest.set('invalid', [:])
-      fail()
-    }
-    catch (IllegalStateException e) {
-      // expected
-    }
   }
 
   @Test

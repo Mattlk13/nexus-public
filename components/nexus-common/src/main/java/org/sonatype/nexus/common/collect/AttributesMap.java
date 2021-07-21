@@ -13,17 +13,24 @@
 package org.sonatype.nexus.common.collect;
 
 import java.lang.reflect.Constructor;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.function.Function;
 
 import javax.annotation.Nullable;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Throwables;
 import com.google.common.collect.Maps;
 import com.google.common.reflect.TypeToken;
+import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +47,7 @@ public class AttributesMap
 {
   private static final Logger log = LoggerFactory.getLogger(AttributesMap.class);
 
+  @JsonProperty
   protected final Map<String, Object> backing;
 
   public AttributesMap(final Map<String, Object> backing) {
@@ -68,8 +76,16 @@ public class AttributesMap
       log.trace("Coerce: {} -> {}", value, type);
 
       // special handling for when Date has become a long (ms since epoch)
-      if (Date.class.equals(type.getRawType()) && value instanceof Number) {
-        return (T) new Date(((Number) value).longValue());
+      if (value instanceof Number) {
+        if (Date.class.equals(type.getRawType())) {
+          return (T) new Date(((Number) value).longValue());
+        }
+        else if (DateTime.class.equals(type.getRawType())) {
+          return (T) new DateTime(((Number) value).longValue());
+        }
+        else if (OffsetDateTime.class.equals(type.getRawType())) {
+          return (T) OffsetDateTime.ofInstant(Instant.ofEpochMilli(((Number) value).longValue()), ZoneOffset.UTC);
+        }
       }
 
       return (T) type.getRawType().cast(value);
@@ -242,6 +258,14 @@ public class AttributesMap
   }
 
   /**
+   * Compute new value for keyed attribute based on current value.
+   */
+  @Nullable
+  public Object compute(final String key, final Function<Object, ? extends Object> function) {
+    return set(key, function.apply(get(key)));
+  }
+
+  /**
    * Set type-keyed attribute value.
    */
   @Nullable
@@ -307,6 +331,7 @@ public class AttributesMap
   /**
    * Check if attributes contains any values.
    */
+  @JsonIgnore
   public boolean isEmpty() {
     return backing.isEmpty();
   }

@@ -12,9 +12,13 @@
  */
 package org.sonatype.nexus.common.template;
 
+import java.util.stream.Stream;
+
 import org.sonatype.nexus.common.encoding.EncodingUtil;
 
 import org.apache.commons.lang.StringEscapeUtils;
+
+import static java.util.stream.Collectors.joining;
 
 /**
  * Helper to escape values.
@@ -33,8 +37,8 @@ public class EscapeHelper
   }
 
   public String url(final String value) {
-    if (value == null) {
-      return null;
+    if (value == null || value.isEmpty()) {
+      return value;
     }
     else {
       return EncodingUtil.urlEncode(value);
@@ -54,8 +58,8 @@ public class EscapeHelper
   }
 
   public String uri(final String value) {
-    if (value == null) {
-      return null;
+    if (value == null || value.isEmpty()) {
+      return value;
     }
     else {
       return url(value)
@@ -72,13 +76,17 @@ public class EscapeHelper
     return uri(String.valueOf(value));
   }
 
+  public String uriSegments(final String value) {
+    return Stream.of(value.split("/")).map(this::uri).collect(joining("/"));
+  }
+
   /**
    * Strip java el start token from a string
    * @since 3.14
    */
   public String stripJavaEl(final String value) {
     if (value != null) {
-      return value.replaceAll("\\$+\\{", "{");
+      return value.replaceAll("\\$+\\{", "{").replaceAll("\\$+\\\\A\\{", "{");
     }
     return null;
   }

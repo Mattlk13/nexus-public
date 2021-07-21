@@ -32,6 +32,13 @@ public interface Component
   String name();
 
   /**
+   * The component kind.
+   *
+   * @since 3.25
+   */
+  String kind();
+
+  /**
    * The component version; empty string if the component doesn't have a version.
    */
   String version();

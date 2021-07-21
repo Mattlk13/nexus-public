@@ -15,6 +15,7 @@ package org.sonatype.nexus.internal.orient;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.orient.OClassNameBuilder;
 import org.sonatype.nexus.orient.entity.SingletonEntityAdapter;
 
@@ -22,11 +23,14 @@ import com.orientechnologies.orient.core.metadata.schema.OClass;
 import com.orientechnologies.orient.core.metadata.schema.OType;
 import com.orientechnologies.orient.core.record.impl.ODocument;
 
+import static org.sonatype.nexus.common.app.FeatureFlags.ORIENT_ENABLED;
+
 /**
  * {@link SingletonEntityAdapter} to store our single {@link DeploymentIdentifier} record.
  *
  * @since 3.6.1
  */
+@FeatureFlag(name = ORIENT_ENABLED)
 @Named
 @Singleton
 class OrientDeploymentIdentifierEntityAdapter

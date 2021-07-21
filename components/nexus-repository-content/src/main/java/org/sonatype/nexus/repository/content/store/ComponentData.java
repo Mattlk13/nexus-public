@@ -32,6 +32,8 @@ public class ComponentData
 
   private String name;
 
+  private String kind;
+
   private String version;
 
   // Component API
@@ -44,6 +46,11 @@ public class ComponentData
   @Override
   public String name() {
     return name;
+  }
+
+  @Override
+  public String kind() {
+    return kind;
   }
 
   @Override
@@ -75,6 +82,15 @@ public class ComponentData
   }
 
   /**
+   * Sets the component kind.
+   *
+   * @since 3.25
+   */
+  public void setKind(final String kind) {
+    this.kind = checkNotNull(kind);
+  }
+
+  /**
    * Sets the component version.
    */
   public void setVersion(final String version) {
@@ -86,5 +102,16 @@ public class ComponentData
   @Override
   public String nextContinuationToken() {
     return Integer.toString(componentId);
+  }
+
+  @Override
+  public String toString() {
+    return "ComponentData{" +
+        "componentId=" + componentId +
+        ", namespace='" + namespace + '\'' +
+        ", name='" + name + '\'' +
+        ", kind='" + kind + '\'' +
+        ", version='" + version + '\'' +
+        "} " + super.toString();
   }
 }

@@ -12,10 +12,13 @@
  */
 package org.sonatype.nexus.testsuite.testsupport;
 
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.security.KeyStore;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +30,8 @@ import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.net.ssl.SSLContext;
 import javax.ws.rs.client.Client;
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.UriBuilder;
 
 import org.sonatype.nexus.pax.exam.NexusPaxExamSupport;
@@ -36,9 +41,16 @@ import org.sonatype.nexus.repository.tools.DeadBlobResult;
 import org.sonatype.nexus.rest.client.RestClientConfiguration;
 import org.sonatype.nexus.rest.client.RestClientConfiguration.Customizer;
 import org.sonatype.nexus.rest.client.RestClientFactory;
+import org.sonatype.nexus.security.SecuritySystem;
+import org.sonatype.nexus.security.anonymous.AnonymousManager;
+import org.sonatype.nexus.selector.SelectorManager;
+import org.sonatype.nexus.testsuite.testsupport.fixtures.SecurityRule;
 import org.sonatype.nexus.testsuite.testsupport.rest.TestSuiteObjectMapperResolver;
 
+import com.google.common.base.Joiner;
+import org.apache.commons.io.IOUtils;
 import org.apache.http.Header;
+import org.apache.http.HttpEntity;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.Credentials;
@@ -49,6 +61,8 @@ import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.CookieSpecs;
 import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
@@ -58,6 +72,7 @@ import org.apache.http.cookie.CookieOrigin;
 import org.apache.http.impl.auth.BasicScheme;
 import org.apache.http.impl.client.BasicAuthCache;
 import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
@@ -74,9 +89,14 @@ import org.junit.rules.TestName;
 import org.ops4j.pax.exam.Configuration;
 import org.ops4j.pax.exam.Option;
 
+import static org.codehaus.groovy.runtime.InvokerHelper.asList;
 import static org.ops4j.pax.exam.CoreOptions.maven;
+import static org.ops4j.pax.exam.CoreOptions.when;
 import static org.ops4j.pax.exam.CoreOptions.wrappedBundle;
 import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFileExtend;
+import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFilePut;
+import static org.ops4j.pax.exam.options.WrappedUrlProvisionOption.OverwriteMode.MERGE;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_DEVELOPER;
 
 /**
  * Support for Nexus integration tests.
@@ -93,18 +113,30 @@ public abstract class NexusITSupport
 
   @Inject
   private PoolingHttpClientConnectionManager connectionManager;
-  
+
   @Inject
   private RepositoryManager repositoryManager;
-  
-  @Inject 
-  private DeadBlobFinder deadBlobFinder;
+
+  @Inject
+  private DeadBlobFinder<?> deadBlobFinder;
 
   @Inject
   protected RestClientFactory restClientFactory;
 
   @Inject
   private TestSuiteObjectMapperResolver testSuiteObjectMapperResolver;
+
+  @Inject
+  private SecuritySystem securitySystem;
+
+  @Inject
+  private SelectorManager selectorManager;
+
+  @Inject
+  private AnonymousManager anonymousManager;
+
+  @Rule
+  public SecurityRule securityRule = new SecurityRule(() -> securitySystem, () -> selectorManager, () -> anonymousManager);
 
   @Configuration
   public static Option[] configureNexus() {
@@ -120,10 +152,13 @@ public abstract class NexusITSupport
 
         editConfigurationFileExtend(SYSTEM_PROPERTIES_FILE, "nexus.loadAsOSS", "true"),
         editConfigurationFileExtend(SYSTEM_PROPERTIES_FILE, "nexus.security.randompassword", "false"),
-
+        editConfigurationFileExtend(NEXUS_PROPERTIES_FILE, "nexus.scripts.allowCreation", "true"),
+        editConfigurationFileExtend(NEXUS_PROPERTIES_FILE, "nexus.search.event.handler.flushOnCount", "1"),
         // install common test-support features
         nexusFeature("org.sonatype.nexus.testsuite", "nexus-repository-testsupport"),
-        wrappedBundle(maven("com.jayway.awaitility", "awaitility").versionAsInProject())
+        wrappedBundle(maven("org.awaitility", "awaitility").versionAsInProject()).overwriteManifest(MERGE).imports("*"),
+        when(getValidTestDatabase().isUseContentStore()).useOptions(editConfigurationFilePut(NEXUS_PROPERTIES_FILE,
+            DATASTORE_DEVELOPER, "true"))
     );
   }
 
@@ -145,26 +180,27 @@ public abstract class NexusITSupport
     // streaming out the response to the client. An HTTP client considers a response done when the content length has
     // been reached at which point the client/test can continue while NX still has to release the upstream connection
     // (cf. ResponseEntityProxy which releases a connection after the last byte has been handed out to the client).
-    // So allow for some delay when checking the connection pool. 
+    // So allow for some delay when checking the connection pool.
     waitFor(() -> connectionManager.getTotalStats().getLeased() == 0, 3 * 1000);
   }
 
   @After
   public void verifyNoDeadBlobs() throws Exception {
-    doVerifyNoDeadBlobs();
+    //only need to verify no dead blobs for non-newdb dbs
+    if (getValidTestDatabase().isUseContentStore()) {
+      doVerifyNoDeadBlobs();
+    }
   }
 
   /**
    * Left protected to allow specific subclasses to override where this behaviour is expected due to minimal test setup.
    */
   protected void doVerifyNoDeadBlobs() {
+    Map<String, List<DeadBlobResult<?>>> badRepos = StreamSupport.stream(repositoryManager.browse().spliterator(), true)
+        .map(repository -> deadBlobFinder.find(repository, shouldIgnoreMissingBlobRefs()))
+        .flatMap(Collection::stream)
+        .collect(Collectors.groupingBy(DeadBlobResult::getRepositoryName));
 
-    Map<String, List<DeadBlobResult>> badRepos =
-        StreamSupport.stream(repositoryManager.browse().spliterator(), true)
-            .map(repository -> deadBlobFinder.find(repository, shouldIgnoreMissingBlobRefs()))
-            .flatMap(Collection::stream)
-            .collect(Collectors.groupingBy(DeadBlobResult::getRepositoryName));
-    
     if (!badRepos.isEmpty()) {
       log.error("Detected dead blobs: {}", badRepos);
       throw new IllegalStateException("Dead blobs detected!");
@@ -280,7 +316,7 @@ public abstract class NexusITSupport
    * @return our session cookie; {@code null} if it doesn't exist
    */
   @Nullable
-  protected Cookie getSessionCookie(CookieStore cookieStore) {
+  protected Cookie getSessionCookie(final CookieStore cookieStore) {
     for (Cookie cookie : cookieStore.getCookies()) {
       if (DEFAULT_SESSION_COOKIE_NAME.equals(cookie.getName())) {
         return cookie;
@@ -293,7 +329,7 @@ public abstract class NexusITSupport
    * @return the header containing our session cookie; {@code null} if it doesn't exist
    */
   @Nullable
-  protected Header getSessionCookieHeader(@Nonnull Header[] headers) {
+  protected Header getSessionCookieHeader(@Nonnull final Header[] headers) {
     for (Header header : headers) {
       if (header.getValue().startsWith(DEFAULT_SESSION_COOKIE_NAME + "=")) {
         return header;
@@ -306,7 +342,7 @@ public abstract class NexusITSupport
    * @return the header containing the anti-csrf token cookie; {@code null} if it doesn't exist
    */
   @Nullable
-  protected Header getAntiCsrfTokenHeader(@Nonnull Header[] headers) {
+  protected Header getAntiCsrfTokenHeader(@Nonnull final Header[] headers) {
     for (Header header : headers) {
       if (header.getValue().startsWith("NX-ANTI-CSRF-TOKEN=")) {
         return header;
@@ -370,5 +406,57 @@ public abstract class NexusITSupport
       resteasyClientBuilder.providerFactory(providerFactory);
       RegisterBuiltin.register(providerFactory);
     };
+  }
+
+  /**
+   * Preform a get request
+   *
+   * @param baseUrl (nexusUrl in most tests)
+   * @param path    to the resource
+   * @return the response object
+   */
+  protected Response get(final URL baseUrl, final String path) throws Exception {
+    return get(baseUrl, path, null, true);
+  }
+
+  /**
+   * Preform a get request
+   *
+   * @param baseUrl               (nexusUrl in most tests)
+   * @param path                  to the resource
+   * @param headers               {@link Header}s
+   * @param useDefaultCredentials use {@link NexusITSupport#clientBuilder(URL, boolean)} for using credentials
+   * @return the response object
+   */
+  protected Response get(final URL baseUrl,
+                         final String path,
+                         final Header[] headers,
+                         final boolean useDefaultCredentials) throws Exception
+  {
+    HttpGet request = new HttpGet();
+    request.setURI(UriBuilder.fromUri(baseUrl.toURI()).path(path).build());
+    request.setHeaders(headers);
+
+    try (CloseableHttpClient client = clientBuilder(nexusUrl, useDefaultCredentials).build()) {
+
+      try (CloseableHttpResponse response = client.execute(request)) {
+        ResponseBuilder responseBuilder = Response.status(response.getStatusLine().getStatusCode());
+        Arrays.stream(response.getAllHeaders()).forEach(h -> responseBuilder.header(h.getName(), h.getValue()));
+
+        HttpEntity entity = response.getEntity();
+        if (entity != null) {
+          responseBuilder.entity(new ByteArrayInputStream(IOUtils.toByteArray(entity.getContent())));
+        }
+        return responseBuilder.build();
+      }
+    }
+  }
+
+  protected String buildNexusUrl(final String... segments) {
+    try {
+      return nexusUrl.toURI().resolve(Joiner.on('/').join(asList(segments))).toString();
+    } catch (URISyntaxException ex) {
+      throw new RuntimeException(ex);
+    }
   }
 }

@@ -13,6 +13,8 @@
 package org.sonatype.nexus.quartz.internal.task;
 
 import java.util.Date;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.annotation.Nullable;
 
@@ -28,6 +30,7 @@ import org.sonatype.nexus.scheduling.events.TaskDeletedEvent;
 import org.sonatype.nexus.scheduling.schedule.Manual;
 import org.sonatype.nexus.scheduling.schedule.Schedule;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.quartz.JobKey;
 import org.quartz.SchedulerException;
 
@@ -45,6 +48,7 @@ import static org.sonatype.nexus.scheduling.TaskState.WAITING;
  *
  * @since 3.0
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class QuartzTaskInfo
     extends ComponentSupport
     implements TaskInfo
@@ -67,6 +71,10 @@ public class QuartzTaskInfo
   private volatile QuartzTaskFuture taskFuture;
 
   private volatile boolean removed;
+
+  private Object lastResult;
+
+  private final Map<String,Object> context = new ConcurrentHashMap<>();
 
   public QuartzTaskInfo(final EventManager eventManager,
                         final QuartzSchedulerSPI scheduler,
@@ -106,19 +114,23 @@ public class QuartzTaskInfo
           // we ended running and have lastRunState available, enhance log with it
           newStateName = newStateName + " (" + taskState.getLastRunState().getEndState().name() + ")";
         }
-        if (log.isDebugEnabled()) {
-          log.info("Task {} : {} state change {} -> {}",
-              jobKey,
-              config.getTaskLogName(),
-              this.state, newStateName);
-        }
-        else {
-          log.info("Task {} state change {} -> {}",
-              config.getTaskLogName(),
-              this.state, newStateName);
+        //some tasks don't care to add noise to the logs for start/stop states, and manage logging themselves
+        if (config.isLogTaskState()) {
+          if (log.isDebugEnabled()) {
+            log.info("Task {} : {} state change {} -> {}",
+                jobKey,
+                config.getTaskLogName(),
+                this.state, newStateName);
+          }
+          else {
+            log.info("Task {} state change {} -> {}",
+                config.getTaskLogName(),
+                this.state, newStateName);
+          }
         }
       }
-      else {
+      //more info we only want to print if the task needs it
+      else if (config.isLogTaskState()) {
         // this is usually config change of waiting task
         log.debug("Task {} : {} : state={} nextRun={}",
             jobKey.getName(),
@@ -201,6 +213,15 @@ public class QuartzTaskInfo
     }
   }
 
+  @Nullable
+  public Object getLastResult() {
+    return lastResult;
+  }
+
+  public void setLastResult(final Object result) {
+    this.lastResult = result;
+  }
+
   @Override
   public synchronized boolean remove() {
     final TaskConfiguration config = taskState.getConfiguration();
@@ -279,6 +300,11 @@ public class QuartzTaskInfo
         ", taskFuture=" + taskFuture +
         ", removed=" + removed +
         '}';
+  }
+
+  @Override
+  public Map<String, Object> getContext() {
+    return context;
   }
 
   /**

@@ -34,7 +34,7 @@ import static java.lang.String.format;
  * {@code content-store-mybatis.xml} using keys in the form of {@code <placeholder_type>.<databaseId>}, for example:
  *
  * <pre>
- * UUID_TYPE.MySQL = VARCHAR(36)
+ * <property name="UUID_TYPE.MySQL" value="VARCHAR(36)"/>
  * </pre>
  *
  * @since 3.20
@@ -62,7 +62,8 @@ enum PlaceholderTypes
    *
    * If this is not H2 or PostgreSQL then we lookup the configured types and turn on lenient support.
    */
-  public static boolean configurePlaceholderTypes(final Configuration config, final String databaseId) {
+  public static boolean configurePlaceholderTypes(final Configuration config) {
+    String databaseId = config.getDatabaseId();
     Properties variables = config.getVariables();
 
     boolean lenient = false;

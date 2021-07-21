@@ -1,10 +1,14 @@
- /*
+/*
  * Sonatype Nexus (TM) Open Source Version
  * Copyright (c) 2008-present Sonatype, Inc.
  * All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
  *
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
+ *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
  *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
@@ -26,11 +30,8 @@ Ext.define('NX.coreui.view.blobstore.BlobstoreSettingsForm', {
   ],
 
   loadRecord: function(model) {
-    var me = this;
-    var state = me.down('[name=state]');
-    state.setText(model.data.unavailable === true ? NX.I18n.get('Blobstore_BlobstoreList_Failed') :
-        NX.I18n.get('Blobstore_BlobstoreList_Started'));
-    me.callParent(arguments);
+    // Removing this causes an NPE in the editable condition code due to the blobstoreTypeModel being null
+    this.callParent(arguments);
   },
 
   initComponent: function() {
@@ -74,13 +75,26 @@ Ext.define('NX.coreui.view.blobstore.BlobstoreSettingsForm', {
           }
           var blobstoreTypeModel = NX.getApplication().getStore('BlobstoreType').getById(value);
           settingsFieldSet.importProperties(null, blobstoreTypeModel.get('formFields'), me.editableCondition);
-
+          me.remove(me.down('#testConnectionButton'));
           me.remove('blobstore-custom-form');
           var customFormName = blobstoreTypeModel.get('customFormName');
+          var isConnectionTestable = blobstoreTypeModel.get('isConnectionTestable');
+
           if (customFormName) {
             me.add({
               id: 'blobstore-custom-form',
               xtype: customFormName
+            });
+          }
+
+          if (isConnectionTestable == true) {
+            me.add({
+              xtype: 'button',
+              id: 'testConnectionButton',
+              text: NX.I18n.get('Blobstore_BlobstoreSettingsForm_Test_Connection_Button'),
+              listeners: {
+                click: me.testConnection
+              }
             });
           }
         }
@@ -95,34 +109,12 @@ Ext.define('NX.coreui.view.blobstore.BlobstoreSettingsForm', {
         enforceMaxLength: true
       },
       {
-        xtype: 'container',
-        layout: 'vbox',
-        style: {
-          'padding-top': '5px',
-          'padding-bottom': '5px'
-        },
-        items: [
-          {
-            xtype: 'label',
-            text: NX.I18n.get('Blobstore_BlobstoreSettingsForm_State_FieldLabel'),
-            style: {
-              'font-weight': 700,
-              'font-size': '13px'
-            },
-            readOnly: true
-          },
-          {
-            xtype: 'label',
-            name: 'state',
-            style: {
-              'font-size': '13px',
-              'padding-left': '6px',
-              'padding-top': '5px',
-              'padding-bottom': '4px'
-            },
-            readOnly: true
-          }
-        ]
+        xtype: 'textfield',
+        name: 'state',
+        itemId: 'state',
+        fieldLabel: NX.I18n.get('Blobstore_BlobstoreSettingsForm_State_FieldLabel'),
+        readOnly: true,
+        allowBlank: true
       },
       {
         xtype: 'checkbox',
@@ -174,7 +166,7 @@ Ext.define('NX.coreui.view.blobstore.BlobstoreSettingsForm', {
     Ext.override(me.getForm(), {
       getValues: function() {
         var values = this.callParent(arguments);
-        var type = values['type'].toLowerCase();
+        var type = (values['type'] || "").toLowerCase();
         values.attributes = {};
         values.attributes[type] = me.down('nx-coreui-formfield-settingsfieldset').exportProperties(values);
         var customForm = me.down('#blobstore-custom-form');
@@ -273,5 +265,22 @@ Ext.define('NX.coreui.view.blobstore.BlobstoreSettingsForm', {
         me.down(f).setReadOnly(readOnly);
       });
     }
+  },
+  testConnection: function(button) {
+    var me = this;
+    var settingsForm = me.up('form');
+
+    Ext.Ajax.request({
+      url: NX.util.Url.baseUrl + '/service/rest/v1/blobstores/test-connection',
+      method: 'POST',
+      scope: me,
+      jsonData: settingsForm.getForm().getValues(),
+      success: function() {
+        NX.Messages.success(NX.I18n.get('Blobstore_BlobstoreSettingsForm_Test_Success_Message'));
+      },
+      failure: function (response) {
+        NX.Messages.error(response.responseText);
+      }
+    });
   }
 });

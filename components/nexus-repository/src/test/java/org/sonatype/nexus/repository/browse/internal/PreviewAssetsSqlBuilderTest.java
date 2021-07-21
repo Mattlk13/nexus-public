@@ -16,7 +16,7 @@ import java.util.HashMap;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.browse.QueryOptions;
+import org.sonatype.nexus.repository.query.QueryOptions;
 import org.sonatype.nexus.repository.security.RepositorySelector;
 
 import org.junit.Before;
@@ -25,7 +25,7 @@ import org.mockito.Mock;
 
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.when;
 
 public class PreviewAssetsSqlBuilderTest

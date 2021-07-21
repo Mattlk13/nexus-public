@@ -12,10 +12,21 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.fixtures;
 
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
+import javax.inject.Inject;
+import javax.inject.Named;
 import javax.inject.Provider;
+import javax.inject.Singleton;
 
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
@@ -23,17 +34,23 @@ import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.blobstore.file.FileBlobStore;
 import org.sonatype.nexus.blobstore.group.BlobStoreGroup;
 import org.sonatype.nexus.blobstore.group.internal.WriteToFirstMemberFillPolicy;
+import org.sonatype.nexus.common.io.DirectoryHelper;
 
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Streams;
 import org.junit.rules.ExternalResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.codehaus.groovy.runtime.InvokerHelper.asList;
+import static org.sonatype.nexus.blobstore.api.BlobStoreManager.DEFAULT_BLOBSTORE_NAME;
 import static org.sonatype.nexus.blobstore.file.FileBlobStore.PATH_KEY;
 
 /**
  * @since 3.20
  */
+@Named
+@Singleton
 public class BlobStoreRule
     extends ExternalResource
 {
@@ -49,7 +66,12 @@ public class BlobStoreRule
     this.blobStoreManagerProvider = blobStoreManagerProvider;
   }
 
-  public BlobStore createFile(String name) throws Exception {
+  @Inject
+  public BlobStoreRule(final BlobStoreManager blobStoreManager) {
+    this.blobStoreManagerProvider = () -> blobStoreManager;
+  }
+
+  public BlobStore createFile(final String name) throws Exception {
     BlobStoreConfiguration config = blobStoreManagerProvider.get().newConfiguration();
     config.setName(name);
     config.setType(FileBlobStore.TYPE);
@@ -59,7 +81,17 @@ public class BlobStoreRule
     return blobStore;
   }
 
-  public BlobStore createGroup(String name, String... members) throws Exception {
+  public BlobStore createFile(final String name, String path) throws Exception {
+    BlobStoreConfiguration config = blobStoreManagerProvider.get().newConfiguration();
+    config.setName(name);
+    config.setType(FileBlobStore.TYPE);
+    config.attributes(FileBlobStore.CONFIG_KEY).set(PATH_KEY, path);
+    BlobStore blobStore = blobStoreManagerProvider.get().create(config);
+    blobStoreNames.add(name);
+    return blobStore;
+  }
+
+  public BlobStore createGroup(final String name, final String... members) throws Exception {
     BlobStoreConfiguration config = blobStoreManagerProvider.get().newConfiguration();
     config.setName(name);
     config.setType(BlobStoreGroup.TYPE);
@@ -70,15 +102,30 @@ public class BlobStoreRule
     return blobStore;
   }
 
-  public void cleanBlobstore(String name) {
-    BlobStore blobStore = blobStoreManagerProvider.get().get(name);
-    blobStore.getBlobIdStream().forEach(blobId -> {
-      blobStore.deleteHard(blobId);
+  public BlobStore get(final String name) {
+    return blobStoreManagerProvider.get().get(name);
+  }
+
+  /**
+   * Delete all blobstores except the default ones
+   */
+  public void deleteAllBlobstoresExceptDefault() {
+    Streams.stream(blobStoreManagerProvider.get().browse()).forEach(blobStore -> {
+      final String name = blobStore.getBlobStoreConfiguration().getName();
+      if (!name.equals(DEFAULT_BLOBSTORE_NAME)) {
+        try {
+          blobStoreManagerProvider.get().forceDelete(name);
+        }
+        catch (Exception e) {
+          log.error("Failed to remove blobstore {}");
+        }
+      }
     });
+
   }
 
   @Override
-  protected void after() {
+  public void after() {
     blobStoreGroupNames.forEach(blobStoreGroupName -> {
       try {
         blobStoreManagerProvider.get().delete(blobStoreGroupName);
@@ -89,11 +136,68 @@ public class BlobStoreRule
     });
     blobStoreNames.forEach(blobStoreName -> {
       try {
-        blobStoreManagerProvider.get().delete(blobStoreName);
+        BlobStore blobStore = blobStoreManagerProvider.get().get(blobStoreName);
+        if (blobStore == null) {
+          log.warn("Blobstore {} not found, will not delete", blobStoreName);
+        }
+        else {
+          cleanBlobstoreContent(blobStore);
+          blobStoreManagerProvider.get().delete(blobStoreName);
+        }
       }
       catch (Exception e) {
         log.error("Failed to remove blobstore {}", blobStoreName, e);
       }
     });
+    blobStoreGroupNames.clear();
+    blobStoreNames.clear();
+  }
+
+  public void cleanBlobstore(final String name) {
+    BlobStore blobStore = blobStoreManagerProvider.get().get(name);
+
+    if (blobStore == null) {
+      log.error("Unable to remove blobstore {}, not found.", name);
+    }
+    else {
+      try {
+        log.info("Cleaning blobstore {} content", name);
+        cleanBlobstoreContent(blobStore);
+        blobStore.flushMetrics();
+        log.info("Finished cleaning blobstore content");
+      }
+      catch (IOException e) {
+        log.error("Failed to clean blobstore {}.", name, e);
+      }
+    }
+  }
+
+  private void cleanBlobstoreContent(final BlobStore blobstore) {
+    try {
+      log.info("Deleting all Blobids from blobstore {}", blobstore.getBlobStoreConfiguration().getName());
+      blobstore.getBlobIdStream().filter(Objects::nonNull).forEach(blobId -> {
+        try {
+          blobstore.deleteHard(blobId);
+        }
+        catch (UncheckedIOException e) {
+          if (e.getCause() instanceof FileNotFoundException) {
+            log.trace("Attempt to delete file that doesn't exist, just ignore and move on.", e);
+          }
+          else {
+            throw e;
+          }
+        }
+      });
+
+      //just in case, dump anything else
+      if (blobstore instanceof FileBlobStore) {
+        FileBlobStore fileBlobStore = (FileBlobStore) blobstore;
+        DirectoryHelper.emptyIfExists(fileBlobStore.getContentDir());
+      }
+      log.info("Completed deleting all Blobids from blobstore {}", blobstore.getBlobStoreConfiguration().getName());
+    }
+    catch (Exception e) {
+      log.error("Failed to remove content from blobstore {}.", blobstore.getBlobStoreConfiguration().getName(), e);
+    }
   }
 }

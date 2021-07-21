@@ -20,18 +20,20 @@ import javax.inject.Inject;
 
 import org.sonatype.goodies.httpfixture.server.fluent.Behaviours;
 import org.sonatype.goodies.httpfixture.server.fluent.Server;
+import org.sonatype.nexus.content.testsuite.groups.OrientAndSQLTestGroup;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.http.HttpStatus;
 import org.sonatype.nexus.testsuite.proxy.DefaultCacheSettingsTester;
 import org.sonatype.nexus.testsuite.testsupport.raw.RawClient;
 import org.sonatype.nexus.testsuite.testsupport.raw.RawITSupport;
 
-import com.google.common.io.Files;
 import org.apache.http.HttpResponse;
 import org.apache.http.entity.ContentType;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
+import static org.apache.commons.io.FileUtils.readFileToByteArray;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -42,12 +44,15 @@ import static org.sonatype.nexus.testsuite.testsupport.FormatClientSupport.statu
 /**
  * IT for proxy raw repositories
  */
+@Category(OrientAndSQLTestGroup.class)
 public class RawProxyOfHostedIT
     extends RawITSupport
 {
-  public static final String TEST_PATH = "alphabet.txt";
+  private static final String INDEX_HTML = "index.html";
 
-  public static final String TEST_CONTENT = "alphabet.txt";
+  private static final String TEST_PATH = "alphabet.txt";
+
+  private static final String TEST_CONTENT = "alphabet.txt";
 
   private RawClient hostedClient;
 
@@ -87,7 +92,18 @@ public class RawProxyOfHostedIT
     final File testFile = resolveTestFile(TEST_CONTENT);
     hostedClient.put(TEST_PATH, ContentType.TEXT_PLAIN, testFile);
 
-    assertThat(bytes(proxyClient.get(TEST_PATH)), is(Files.toByteArray(testFile)));
+    assertThat(bytes(proxyClient.get(TEST_PATH)), is(readFileToByteArray(testFile)));
+  }
+
+  @Test
+  public void fetchFromRemoteWithEncodedFileName() throws Exception {
+    File testFile = resolveTestFile("%252B%2520.txt");
+    hostedClient.put(testFile.getName(), ContentType.TEXT_PLAIN, testFile);
+
+    HttpResponse httpResponse = proxyClient.get(testFile.getName());
+
+    assertThat(status(httpResponse), is(HttpStatus.OK));
+    assertThat(bytes(httpResponse), is(readFileToByteArray(testFile)));
   }
 
   @Test
@@ -97,7 +113,7 @@ public class RawProxyOfHostedIT
 
     HttpResponse response = proxyClient.get(TEST_PATH);
     assertThat(status(response), is(HttpStatus.OK));
-    assertThat(bytes(response), is(Files.toByteArray(testFile)));
+    assertThat(bytes(response), is(readFileToByteArray(testFile)));
     assertThat(getLastDownloadedTime(proxyRepo, TEST_PATH).isBeforeNow(), is(equalTo(true)));
   }
 
@@ -136,6 +152,49 @@ public class RawProxyOfHostedIT
   @Test
   public void status503ViaProxyProduces503() throws Exception {
     responseViaProxyProduces(HttpStatus.SERVICE_UNAVAILABLE, HttpStatus.SERVICE_UNAVAILABLE);
+  }
+
+  @Test
+  public void remoteHasNoContent() throws Exception {
+    Server server = Server.withPort(0)
+        .serve("/*").withBehaviours(Behaviours.error(HttpStatus.NOT_FOUND))
+        .start();
+    try {
+      proxyClient = rawClient(repos.createRawProxy(testName.getMethodName(), server.getUrl().toExternalForm()));
+      assertThat(status(hostedClient.get(TEST_PATH + "/")), is(HttpStatus.NOT_FOUND));
+      assertThat(status(hostedClient.get("")), is(HttpStatus.NOT_FOUND));
+    }
+    finally {
+      server.stop();
+    }
+  }
+
+  @Test
+  public void hostedHasNoContent() throws Exception {
+    assertThat(status(hostedClient.get(TEST_PATH + "/")), is(HttpStatus.NOT_FOUND));
+    assertThat(status(hostedClient.get("")), is(HttpStatus.NOT_FOUND));
+  }
+
+  @Test
+  public void rootShouldServeRemoteIndexHtmlContentIfPresent() throws Exception {
+    final File testFile = resolveTestFile(INDEX_HTML);
+    hostedClient.put(INDEX_HTML, ContentType.TEXT_PLAIN, testFile);
+
+    HttpResponse response = proxyClient.get("");
+    assertThat(status(response), is(HttpStatus.OK));
+    assertThat(bytes(response), is(readFileToByteArray(testFile)));
+    assertThat(getLastDownloadedTime(proxyRepo, ".").isBeforeNow(), is(equalTo(true)));
+  }
+
+  @Test
+  public void rootShouldServeRemoteIndexHtmContentIfPresent() throws Exception {
+    final File testFile = resolveTestFile(INDEX_HTML);
+    hostedClient.put("index.htm", ContentType.TEXT_PLAIN, testFile);
+
+    HttpResponse response = proxyClient.get("");
+    assertThat(status(response), is(HttpStatus.OK));
+    assertThat(bytes(response), is(readFileToByteArray(testFile)));
+    assertThat(getLastDownloadedTime(proxyRepo, ".").isBeforeNow(), is(equalTo(true)));
   }
 
   private void responseViaProxyProduces(final int upstreamStatus, final int downstreamStatus) throws Exception {

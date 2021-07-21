@@ -22,12 +22,12 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import static com.jayway.awaitility.Awaitility.await;
+import static org.awaitility.Awaitility.await;
 import static java.lang.Thread.State.WAITING;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Stream.generate;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.fail;
 
 /**
@@ -90,6 +90,7 @@ public class DatabasePoolTest
     }
   }
 
+  @SuppressWarnings("java:S2699") // sonar doesn't detect awaitility assertions https://jira.sonarsource.com/browse/SONARJAVA-3334
   @Test
   public void exceedingConnectionLimitBlocks() throws Exception {
     int numWorkers = 20;
@@ -117,6 +118,7 @@ public class DatabasePoolTest
     }
   }
 
+  @SuppressWarnings("java:S2699") // sonar doesn't detect awaitility assertions https://jira.sonarsource.com/browse/SONARJAVA-3334
   @Test
   public void exceedingPerCoreConnectionLimitBlocks() throws Exception {
     int numWorkers = NUM_CORES * 8; // set high to try and hit all (hashed) partitions

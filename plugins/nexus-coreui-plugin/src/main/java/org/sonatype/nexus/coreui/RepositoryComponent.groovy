@@ -39,8 +39,8 @@ import org.sonatype.nexus.repository.cache.RepositoryCacheUtils
 import org.sonatype.nexus.repository.config.Configuration
 import org.sonatype.nexus.repository.httpclient.HttpClientFacet
 import org.sonatype.nexus.repository.manager.RepositoryManager
-import org.sonatype.nexus.repository.search.RebuildIndexTask
-import org.sonatype.nexus.repository.search.RebuildIndexTaskDescriptor
+import org.sonatype.nexus.repository.search.index.RebuildIndexTask
+import org.sonatype.nexus.repository.search.index.RebuildIndexTaskDescriptor
 import org.sonatype.nexus.repository.security.RepositoryAdminPermission
 import org.sonatype.nexus.repository.security.RepositoryPermissionChecker
 import org.sonatype.nexus.repository.security.RepositorySelector
@@ -62,7 +62,7 @@ import com.softwarementors.extjs.djn.config.annotations.DirectPollMethod
 import groovy.transform.PackageScope
 import org.apache.commons.lang3.StringUtils
 import org.apache.shiro.authz.annotation.RequiresAuthentication
-import org.hibernate.validator.constraints.NotEmpty
+import javax.validation.constraints.NotEmpty
 
 import static org.sonatype.nexus.coreui.internal.RepositoryCleanupAttributesUtil.initializeCleanupAttributes
 
@@ -156,7 +156,7 @@ class RepositoryComponent
   @Timed
   @ExceptionMetered
   List<RepositoryReferenceXO> readReferences(final @Nullable StoreLoadParameters parameters) {
-    return filter(parameters).collect { Repository repository ->
+    List<RepositoryReferenceXO> references = filter(parameters).collect { Repository repository ->
       new RepositoryReferenceXO(
           id: repository.name,
           name: repository.name,
@@ -167,6 +167,17 @@ class RepositoryComponent
           url: "${BaseUrlHolder.get()}/repository/${repository.name}/" // trailing slash is important
       )
     }
+    references = filterForAutocomplete(parameters, references)
+    return references
+  }
+
+  List<RepositoryReferenceXO> filterForAutocomplete(final @Nullable StoreLoadParameters parameters,
+                                                    final List<RepositoryReferenceXO> references) {
+    if (StringUtils.isNotEmpty(parameters.getQuery())) {
+      return references.stream().filter({ repo -> repo.getName().startsWith(parameters.getQuery()) }).
+          collect(Collectors.toList())
+    }
+    return references
   }
 
   /**

@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -34,8 +38,7 @@ Ext.define('NX.coreui.controller.Repositories', {
     'Repository'
   ],
   stores: [
-    'Datastore',
-    'Blobstore',
+    'BlobstoreNames',
     'Repository',
     'RepositoryRecipe',
     'RepositoryReference',
@@ -48,34 +51,48 @@ Ext.define('NX.coreui.controller.Repositories', {
     'repository.RepositorySelectRecipe',
     'repository.RepositorySettings',
     'repository.RepositorySettingsForm',
+    'repository.recipe.AptHosted',
+    'repository.recipe.AptProxy',
     'repository.recipe.BowerGroup',
     'repository.recipe.BowerHosted',
     'repository.recipe.BowerProxy',
-    'repository.recipe.Maven2Hosted',
-    'repository.recipe.Maven2Proxy',
-    'repository.recipe.Maven2Group',
-    'repository.recipe.NpmHosted',
-    'repository.recipe.NpmProxy',
-    'repository.recipe.NpmGroup',
-    'repository.recipe.NugetHosted',
-    'repository.recipe.NugetProxy',
-    'repository.recipe.NugetGroup',
-    'repository.recipe.RubygemsHosted',
-    'repository.recipe.RubygemsProxy',
-    'repository.recipe.RubygemsGroup',
-    'repository.recipe.RawHosted',
-    'repository.recipe.RawProxy',
-    'repository.recipe.RawGroup',
+    'repository.recipe.CocoapodsProxy',
+    'repository.recipe.ConanHosted',
+    'repository.recipe.ConanProxy',
+    'repository.recipe.CondaProxy',
     'repository.recipe.DockerHosted',
     'repository.recipe.DockerGroup',
     'repository.recipe.DockerProxy',
+    'repository.recipe.GitLfsHosted',
+    'repository.recipe.GolangGroup',
+    'repository.recipe.GolangHosted',
+    'repository.recipe.HelmHosted',
+    'repository.recipe.HelmProxy',
+    'repository.recipe.Maven2Group',
+    'repository.recipe.Maven2Hosted',
+    'repository.recipe.Maven2Proxy',
+    'repository.recipe.NpmGroup',
+    'repository.recipe.NpmHosted',
+    'repository.recipe.NpmProxy',
+    'repository.recipe.NugetGroup',
+    'repository.recipe.NugetHosted',
+    'repository.recipe.NugetProxy',
+    'repository.recipe.P2Proxy',
+    'repository.recipe.PyPiGroup',
     'repository.recipe.PyPiHosted',
     'repository.recipe.PyPiProxy',
-    'repository.recipe.PyPiGroup',
-    'repository.recipe.YumProxy',
-    'repository.recipe.YumHosted',
+    'repository.recipe.RGroup',
+    'repository.recipe.RHosted',
+    'repository.recipe.RProxy',
+    'repository.recipe.RawGroup',
+    'repository.recipe.RawHosted',
+    'repository.recipe.RawProxy',
+    'repository.recipe.RubygemsGroup',
+    'repository.recipe.RubygemsHosted',
+    'repository.recipe.RubygemsProxy',
     'repository.recipe.YumGroup',
-    'repository.recipe.GitLfsHosted'
+    'repository.recipe.YumHosted',
+    'repository.recipe.YumProxy'
   ],
   refs: [
     {ref: 'feature', selector: 'nx-coreui-repository-feature'},
@@ -117,7 +134,8 @@ Ext.define('NX.coreui.controller.Repositories', {
       },
       visible: function() {
         // Show feature if the current user is permitted any repository-admin permissions
-        return NX.Permissions.checkExistsWithPrefix('nexus:repository-admin');
+        return NX.Permissions.checkExistsWithPrefix('nexus:repository-admin') &&
+          !NX.State.getValue('nexus.react.repositories', true);
       },
       weight: 10
     };
@@ -161,11 +179,34 @@ Ext.define('NX.coreui.controller.Repositories', {
         'nx-coreui-repository-selectrecipe': {
           cellclick: me.showAddRepositoryPanel
         },
-        'nx-coreui-repository-feature combo[name=attributes.maven.versionPolicy]' : {
-          change: me.handleMaven2VersionPolicyChange
-        }
+        'nx-coreui-repository-feature #remoteUrl': {
+          change: me.disablePreEmptiveAuthCheckboxIfNotHttps
+        },
+        'nx-coreui-repository-feature checkbox[name=authEnabled]': {
+          change: me.disablePreEmptiveAuthCheckboxIfNotHttps
+        },
+        'nx-coreui-repository-feature #attributes_httpclient_authentication_preemptive': {
+          /* Enabled/disabled state has to be re-evaluated any time the checkbox is enabled, because the parent
+          OptionalFieldSet enables all child elements each time it is expanded */
+          enable: me.disablePreEmptiveAuthCheckboxIfNotHttps
+        },
+        'nx-coreui-repository-nugetproxy-facet radiogroup[name=nugetVersion]': {
+          change: me.onNugetProxyVersionChange
+        },
       }
     });
+  },
+
+  disablePreEmptiveAuthCheckboxIfNotHttps: function(el) {
+    var form = el.up('form'),
+        remoteUrl = form.down('#remoteUrl').getValue(),
+        authenticationCheckbox = form.down('checkbox[name=authEnabled]'),
+        preemptiveCheckbox = form.down('checkbox#attributes_httpclient_authentication_preemptive');
+
+    if (preemptiveCheckbox && preemptiveCheckbox.isVisible()
+        && authenticationCheckbox && authenticationCheckbox.getValue()) {
+      preemptiveCheckbox.setDisabled(!remoteUrl.startsWith('https://'));
+    }
   },
 
   /**
@@ -319,6 +360,8 @@ Ext.define('NX.coreui.controller.Repositories', {
     var me = this,
         uiSettings = NX.State.getValue('uiSettings'),
         statusInterval = 5;
+
+    me.updateFormatSpecificProxyRepoURLs();
 
     if (me.statusProvider) {
       me.statusProvider.disconnect();
@@ -599,6 +642,78 @@ Ext.define('NX.coreui.controller.Repositories', {
           }
         ]
       }
+    });
+  },
+
+  onNugetProxyVersionChange: function(element, newValue) {
+    var me = this,
+      store = me.getStore('Repository');
+
+    var nugetVersion = newValue['attributes.nugetProxy.nugetVersion'];
+
+    var repositoryId = me.getModelIdFromBookmark(),
+              model = repositoryId ? store.findRecord('name', repositoryId, 0, false, true, true) : undefined;
+    if (model) {
+      var repositoryUrl = model.get('url');
+      if (nugetVersion == 'V3') {
+        if (Ext.String.endsWith(repositoryUrl, 'index.json')) {
+          return;
+        }
+        repositoryUrl += 'index.json';
+      } else {
+        repositoryUrl = repositoryUrl.replace('index.json', '');
+      }
+      model.set('url', repositoryUrl);
+      model.commit(true);
+
+      var form = element.up('form'),
+        repositoryUrlField = form.down('textfield[name=url]');
+
+      if (repositoryUrl && repositoryUrlField) {
+        repositoryUrlField.setValue(repositoryUrl);
+      }
+    }
+  },
+
+  /**
+   * @private
+   * Update NuGet proxy repositories URLs with 'index.json' suffix for V3.
+   */
+  updateFormatSpecificProxyRepoURLs: function() {
+    var me = this,
+      store = me.getStore('Repository');
+
+    // wait until the repositories list loaded
+    store.on('load', function() {
+      store.each(function(record) {
+        var format = record.get('format');
+        var name = record.get('name');
+        var type = record.get('type');
+
+        // update nuget-v3-proxy and conda-proxy repo URLs only in the model
+        if (type === 'proxy') {
+          var model = store.findRecord('name', name);
+          if (model) {
+            var repoUrl = model.get('url');
+
+            if (format === 'nuget') {
+              var nugetVersion = model.get('attributes')['nugetProxy']['nugetVersion'];
+              if (nugetVersion === 'V3' && !Ext.String.endsWith(repoUrl, 'index.json')) {
+                repoUrl += 'index.json';
+                model.set('url', repoUrl);
+                model.commit(true);
+              }
+            }
+            if (format === 'conda') {
+              if (!Ext.String.endsWith(repoUrl, 'main')) {
+                repoUrl += 'main';
+                model.set('url', repoUrl);
+                model.commit(true);
+              }
+            }
+          }
+        }
+      });
     });
   }
 

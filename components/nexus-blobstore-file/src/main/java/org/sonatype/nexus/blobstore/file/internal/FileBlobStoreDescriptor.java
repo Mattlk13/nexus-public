@@ -60,30 +60,45 @@ public class FileBlobStoreDescriptor
 
     @DefaultMessage("Path")
     String pathLabel();
+
+    @DefaultMessage("An absolute path or a path relative to <data-directory>/blobs")
+    String pathHelpText();
   }
 
   private static final Messages messages = I18N.create(Messages.class);
 
   private final ApplicationDirectories applicationDirectories;
 
-  private final FormField path;
+  private final FormField<String> path;
 
   private final BlobStoreUtil blobStoreUtil;
+
+  private final FileBlobStorePathValidator pathValidator;
 
   @Inject
   public FileBlobStoreDescriptor(final BlobStoreQuotaService quotaService,
                                  final ApplicationDirectories applicationDirectories,
-                                 final BlobStoreUtil blobStoreUtil)
+                                 final BlobStoreUtil blobStoreUtil,
+                                 final FileBlobStorePathValidator pathValidator,
+                                 @Named("${nexus.react.blobstores:-false}") Boolean featureFlag)
   {
     super(quotaService);
     this.applicationDirectories = applicationDirectories;
     this.blobStoreUtil = blobStoreUtil;
-    this.path = new StringTextFormField(
-        PATH_KEY,
-        messages.pathLabel(),
-        null,
-        MANDATORY
-    );
+    this.pathValidator = pathValidator;
+    if (featureFlag) {
+      this.path = new StringTextFormField(PATH_KEY, messages.pathLabel(), messages.pathHelpText(), MANDATORY)
+          .withAttribute("tokenReplacement", applicationDirectories.getWorkDirectory("blobs") + "/${name}")
+          .withAttribute("long", Boolean.TRUE);
+    }
+    else {
+      this.path = new StringTextFormField(PATH_KEY, messages.pathLabel(), messages.pathHelpText(), MANDATORY);
+    }
+  }
+
+  @Override
+  public String getId() {
+    return "file";
   }
 
   @Override
@@ -106,6 +121,8 @@ public class FileBlobStoreDescriptor
         .orElseThrow(() -> new ValidationErrorsException(
             format("The maximum name length for any folder in the path is %d.", MAX_NAME_LENGTH)));
 
+    pathValidator.validatePathUniqueConstraint(config);
+
     try {
       if (!path.isAbsolute()) {
         Path baseDir = applicationDirectories.getWorkDirectory(BASEDIR).toPath().toRealPath().normalize();
@@ -122,8 +139,7 @@ public class FileBlobStoreDescriptor
     }
     catch (IOException e) {
       throw new ValidationErrorsException(
-          format("Blob store could not be written because the base directory %s could not be written to",
-              applicationDirectories.getWorkDirectory(BASEDIR).getPath()));
+          format("Blob store could not be written because the path %s could not be written to", path), e);
     }
 
     if (!Files.isWritable(path)) {

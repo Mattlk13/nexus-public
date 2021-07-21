@@ -22,4 +22,15 @@ public interface FeatureFlags
 {
   /* Go (hosted) repository is experimental. Available values: true, false. Default value: false */
   String FEATURE_GOLANG_HOSTED = "nexus.golang.hosted";
+
+  /* Database externalization. Available values: true, false. Default value: false */
+  String DATASTORE_ENABLED = "nexus.datastore.enabled";
+  String DATASTORE_ENABLED_NAMED = "${nexus.datastore.enabled:-false}";
+
+  /* Database externalization developers only. Available values: true, false. Default value: false */
+  String DATASTORE_DEVELOPER = "nexus.datastore.developer";
+  String DATASTORE_DEVELOPER_NAMED = "${nexus.datastore.developer:-false}";
+
+  /* Orient flag for marking content that is orient only, and should be disabled when datastore is enabled */
+  String ORIENT_ENABLED = "nexus.orient.enabled";
 }

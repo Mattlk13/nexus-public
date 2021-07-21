@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -45,6 +49,8 @@ Ext.define('NX.coreui.controller.Assets', {
     {ref: 'assetList', selector: 'grid[assetContainerSource=true]'},
     {ref: 'assetInfo', selector: 'nx-coreui-component-assetinfo'},
     {ref: 'deleteAssetButton', selector: 'nx-coreui-component-assetcontainer button[action=deleteAsset]'},
+    {ref: 'componentAssetInfo', selector: 'nx-coreui-component-componentassetinfo'},
+    {ref: 'viewVulnerabilitiesButton', selector: 'nx-coreui-component-componentassetinfo button[action=viewVulnerabilities]'},
     {ref: 'componentList', selector: 'grid[componentList=true]'},
     {ref: 'componentDetails', selector: 'nx-coreui-component-details'},
     {ref: 'deleteComponentButton', selector: 'nx-coreui-component-details button[action=deleteComponent]'},
@@ -116,6 +122,9 @@ Ext.define('NX.coreui.controller.Assets', {
         'nx-coreui-component-assetcontainer button[action=deleteAsset]': {
           click: me.deleteAsset
         },
+        'nx-coreui-component-componentassetinfo button[action=viewVulnerabilities]': {
+          click: me.mixins.componentUtils.viewVulnerabilities
+        },
         'nx-coreui-component-details button[action=deleteComponent]': {
           click: me.deleteComponent
         },
@@ -125,12 +134,6 @@ Ext.define('NX.coreui.controller.Assets', {
         'nx-coreui-component-details button[action=analyzeApplication]': {
           click: me.mixins.componentUtils.openAnalyzeApplicationWindow
         },
-        'nx-coreui-component-analyze-window button[action=analyze]': {
-          click: me.analyzeAsset
-        },
-        'nx-coreui-component-analyze-window combobox[name="asset"]': {
-          select: me.selectedApplicationChanged
-        }
       }
     });
 
@@ -375,55 +378,6 @@ Ext.define('NX.coreui.controller.Assets', {
 
     if (formatSpecificActionHandler && formatSpecificActionHandler.browseComponent) {
       formatSpecificActionHandler.browseComponent(componentModel, assetModel);
-    }
-  },
-
-  /**
-   * Analyze a component using the AHC service
-   *
-   * @private
-   */
-  analyzeAsset: function(button) {
-    var me = this,
-        componentDetails = me.getComponentDetails(),
-        win,
-        form,
-        formValues,
-        repositoryName,
-        assetId;
-
-    if (componentDetails) {
-      win = button.up('window');
-      form = button.up('form');
-      formValues = form.getForm().getValues();
-      repositoryName = componentDetails.componentModel.get('repositoryName');
-      assetId = form.down('combo[name="asset"]').getValue();
-
-      NX.direct.ahc_Component.analyzeAsset(repositoryName, assetId, formValues.emailAddress, formValues.password,
-          formValues.proprietaryPackages, formValues.reportLabel, function(response) {
-            if (Ext.isObject(response) && response.success) {
-              win.close();
-              NX.Messages.success(NX.I18n.get('ComponentDetails_Analyze_Success'));
-            }
-          });
-    }
-  },
-
-  /**
-   * When app changes, update the reportName as well
-   */
-  selectedApplicationChanged: function(combo) {
-    var me = this,
-        componentDetails = me.getComponentDetails(),
-        labelField;
-
-    if (componentDetails) {
-      labelField = me.getAnalyzeApplicationWindow().down('textfield[name="reportLabel"]');
-      if (!labelField.isDirty()) {
-        //I am setting the original value so it won't be marked dirty unless user touches it
-        labelField.originalValue = combo.getRawValue();
-        labelField.setValue(combo.getRawValue());
-      }
     }
   },
 

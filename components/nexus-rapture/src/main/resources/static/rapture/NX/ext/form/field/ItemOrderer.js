@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -53,11 +57,11 @@ Ext.define('NX.ext.form.field.ItemOrderer', {
    * @cfg {Object} buttonsGlyph The glyphs for the {@link #buttons}.
    * Glyphs for buttons.
    */
-  buttonsGlyph: {
-    top: 'xf102@FontAwesome' /* fa-angle-double-up */,
-    up: 'xf106@FontAwesome' /* fa-angle-up */,
-    down: 'xf107@FontAwesome' /* fa-angle-down */,
-    bottom: 'xf103@FontAwesome' /* fa-angle-double-down */
+  buttonsIconCls: {
+    top: 'x-fa fa-angle-double-up',
+    up: 'x-fa fa-angle-up',
+    down: 'x-fa fa-angle-down',
+    bottom: 'x-fa fa-angle-double-down'
   },
 
   layout: {
@@ -132,7 +136,7 @@ Ext.define('NX.ext.form.field.ItemOrderer', {
         buttons.push({
           xtype: 'button',
           tooltip: me.buttonsText[name],
-          glyph: me.buttonsGlyph[name],
+          iconCls: me.buttonsIconCls[name],
           handler: me['on' + Ext.String.capitalize(name) + 'BtnClick'],
           navBtn: true,
           scope: me,

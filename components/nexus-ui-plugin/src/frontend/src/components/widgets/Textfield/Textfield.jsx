@@ -10,37 +10,46 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-import classNames from 'classnames';
 import PropTypes from 'prop-types';
 import React from 'react';
-
-import './Textfield.scss';
-
-import RequiredErrorMessage from '../RequiredErrorMessage/RequiredErrorMessage';
+import {NxTextInput} from '@sonatype/react-shared-components';
 
 /**
- * @since 3.next
+ * @since 3.21
+ * @deprecated prefer NxTextInput instead
  */
-export default function Textfield({name, value, onChange, isRequired, className}) {
-  const isMissingRequiredValue = isRequired && !value;
-  const classes = classNames('nxrm-textfield', className, {
-    'missing-required-value': isMissingRequiredValue
-  });
-  return <>
-    <input
-        name={name}
-        type='text'
-        value={value}
-        onChange={onChange}
-        className={classes}
-    />
-    {isMissingRequiredValue ? <RequiredErrorMessage/> : null}
-  </>;
+export default function Textfield({id, name, type = "text", onChange, isPristine = false, validatable = true, ...attrs}) {
+  function handleChange(value) {
+    if (onChange) {
+      const target = {
+        id: id || name,
+        name,
+        type,
+        value
+      };
+      onChange({
+        currentTarget: target,
+        target: target
+      });
+    }
+  }
+
+  const inputAttrs = {
+    ...attrs,
+    id: id || name,
+    name,
+    type: type === 'number' ? 'text' : type,
+    isPristine,
+    validatable,
+    onChange: handleChange
+  };
+
+  return <NxTextInput {...inputAttrs} />;
 }
 
 Textfield.propTypes = {
+  id: PropTypes.string,
   name: PropTypes.string,
   value: PropTypes.string,
-  onChange: PropTypes.func,
-  isRequired: PropTypes.bool
+  validationErrors: PropTypes.oneOfType([PropTypes.string, PropTypes.array])
 };

@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.scheduling.PeriodicJobService.PeriodicJob;
 
-import com.jayway.awaitility.Awaitility;
+import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -48,6 +48,7 @@ public class PeriodicJobServiceImplTest
     }
   }
 
+  @SuppressWarnings("java:S2699") // sonar doesn't detect awaitility assertions https://jira.sonarsource.com/browse/SONARJAVA-3334
   @Test
   public void numberIncrementingTask() throws Exception {
     service.startUsing();

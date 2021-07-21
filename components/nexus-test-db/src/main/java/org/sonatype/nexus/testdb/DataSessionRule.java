@@ -12,26 +12,23 @@
  */
 package org.sonatype.nexus.testdb;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.sonatype.nexus.datastore.api.ContentDataAccess;
 import org.sonatype.nexus.datastore.api.DataAccess;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.datastore.api.DataSessionSupplier;
+import org.sonatype.nexus.datastore.api.DataStore;
 import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
 import org.sonatype.nexus.datastore.api.DataStoreNotFoundException;
 import org.sonatype.nexus.datastore.mybatis.MyBatisDataStore;
 
-import com.opentable.db.postgres.embedded.EmbeddedPostgres;
 import org.apache.ibatis.plugin.Interceptor;
 import org.apache.ibatis.type.TypeHandler;
 import org.junit.rules.ExternalResource;
@@ -39,20 +36,18 @@ import org.junit.runner.Description;
 import org.junit.runners.model.Statement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.testcontainers.containers.PostgreSQLContainer;
 
 import static com.google.common.base.Throwables.throwIfUnchecked;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static java.nio.file.Files.createTempDirectory;
-import static java.time.Duration.ofSeconds;
 import static java.util.Arrays.stream;
 import static java.util.Optional.ofNullable;
 import static java.util.function.Function.identity;
 import static java.util.stream.Stream.concat;
 import static java.util.stream.Stream.of;
 import static org.sonatype.nexus.common.property.SystemPropertiesHelper.getBoolean;
-import static org.sonatype.nexus.common.property.SystemPropertiesHelper.getInteger;
 import static org.sonatype.nexus.common.text.Strings2.isBlank;
-import static org.sonatype.nexus.datastore.api.DataStoreManager.CONFIG_DATASTORE_NAME;
+import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 import static org.sonatype.nexus.datastore.mybatis.MyBatisDataStoreDescriptor.JDBC_URL;
 
 /**
@@ -64,10 +59,6 @@ public class DataSessionRule
     extends ExternalResource
     implements DataSessionSupplier
 {
-  private static final Path BASEDIR = new File(System.getProperty("basedir", "")).toPath();
-
-  private static final String POSTGRES_NO_CLEANUP_KEY = "ot.epg.no-cleanup";
-
   private static final Logger log = LoggerFactory.getLogger(DataSessionRule.class);
 
   private final Map<String, String> attributes = new HashMap<>();
@@ -84,13 +75,13 @@ public class DataSessionRule
 
   private String jdbcUrl;
 
-  private Object postgres;
+  private PostgreSQLContainer<?> postgres;
 
   /**
    * Supplies in-memory config sessions.
    */
   public DataSessionRule() {
-    this(CONFIG_DATASTORE_NAME);
+    this(DEFAULT_DATASTORE_NAME);
   }
 
   /**
@@ -160,15 +151,13 @@ public class DataSessionRule
       try {
         store.start();
 
-        if (CONFIG_DATASTORE_NAME.equals(storeName)) {
-          configAccessTypes.forEach(store::register);
-        }
-        else {
-          contentAccessTypes.forEach(store::register);
-        }
-
         typeHandlers.forEach(store::register);
         interceptors.forEach(store::register);
+
+        if (DEFAULT_DATASTORE_NAME.equals(storeName)) {
+          configAccessTypes.forEach(store::register);
+          contentAccessTypes.forEach(store::register);
+        }
       }
       catch (Exception e) {
         log.warn("Problem starting {}", storeName, e);
@@ -184,7 +173,6 @@ public class DataSessionRule
     {
       @Override
       public void evaluate() throws Throwable {
-        System.clearProperty(POSTGRES_NO_CLEANUP_KEY);
         try {
           attribute(JDBC_URL, jdbcUrl);
           before();
@@ -194,11 +182,6 @@ public class DataSessionRule
           finally {
             after();
           }
-        }
-        catch (RuntimeException|Error e) {
-          // keep persisted data around if the test fails
-          System.setProperty(POSTGRES_NO_CLEANUP_KEY, "true");
-          throw e;
         }
         finally {
           if (postgres != null) {
@@ -231,6 +214,10 @@ public class DataSessionRule
     return ofNullable(stores.get(storeName)).orElseThrow(() -> new DataStoreNotFoundException(storeName)).openConnection();
   }
 
+  public Optional<DataStore<?>> getDataStore(final String storeName) {
+    return Optional.ofNullable(stores.get(storeName));
+  }
+
   @Override
   protected void after() {
     stores.values().forEach(t -> {
@@ -244,30 +231,19 @@ public class DataSessionRule
   }
 
   protected String startPostgres() {
-    try {
-      File dataDir = createTempDirectory(BASEDIR.resolve("target"), "pg_").toFile();
+    //11.9 is the minimum support version
+    postgres = new PostgreSQLContainer<>("docker-all.repo.sonatype.com/postgres:11.9");
+    postgres.start();
 
-      postgres = EmbeddedPostgres.builder()
-          .setPGStartupWait(ofSeconds(getInteger("test.waitForPostgres", 30)))
-          .setCleanDataDirectory(getBoolean("test.cleanOnSuccess", true))
-          .setDataDirectory(dataDir)
-          .start();
-
-      // use the same underlying PostgreSQL database as backing for each store
-      return ((EmbeddedPostgres) postgres).getJdbcUrl("postgres", "postgres");
-    }
-    catch (IOException e) {
-      throw new UncheckedIOException(e);
-    }
+    // use the same underlying PostgreSQL database as backing for each store
+    return postgres
+        .withUrlParam("user", "test")
+        .withUrlParam("password", "test")
+        .getJdbcUrl();
   }
 
   protected void stopPostgres() {
-    try {
-      ((EmbeddedPostgres) postgres).close();
-      postgres = null;
-    }
-    catch (IOException e) {
-      throw new UncheckedIOException(e);
-    }
+    postgres.close();
+    postgres = null;
   }
 }

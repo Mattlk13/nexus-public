@@ -14,15 +14,18 @@ package org.sonatype.nexus.coreui
 
 import javax.inject.Inject
 import javax.inject.Named
+import javax.inject.Provider
 import javax.inject.Singleton
 
 import org.sonatype.nexus.common.encoding.EncodingUtil
 import org.sonatype.nexus.extdirect.DirectComponent
 import org.sonatype.nexus.extdirect.DirectComponentSupport
 import org.sonatype.nexus.repository.Repository
-import org.sonatype.nexus.repository.browse.BrowseNodeConfiguration
+import org.sonatype.nexus.repository.browse.node.BrowseNode
+import org.sonatype.nexus.repository.browse.node.BrowseNodeConfiguration
+import org.sonatype.nexus.repository.browse.node.BrowseNodeQueryService
 import org.sonatype.nexus.repository.manager.RepositoryManager
-import org.sonatype.nexus.repository.storage.BrowseNodeStore
+import org.sonatype.nexus.repository.ossindex.VulnerabilityService
 
 import com.codahale.metrics.annotation.ExceptionMetered
 import com.codahale.metrics.annotation.Timed
@@ -49,10 +52,13 @@ class BrowseComponent
   BrowseNodeConfiguration configuration
 
   @Inject
-  BrowseNodeStore browseNodeStore
+  BrowseNodeQueryService browseNodeQueryService
 
   @Inject
   RepositoryManager repositoryManager
+
+  @Inject
+  Provider<VulnerabilityService> vulnerabilityServiceProvider
 
   @DirectMethod
   @Timed
@@ -68,23 +74,27 @@ class BrowseComponent
       pathSegments = Collections.emptyList()
     }
     else {
-      pathSegments = path.split('/').collect EncodingUtil.&urlDecode
+      pathSegments = path.split('/').collect { String part -> EncodingUtil.urlDecode(part) }
     }
 
-    return browseNodeStore.getByPath(repository, pathSegments, configuration.maxNodes).collect { browseNode ->
-      def encodedPath = EncodingUtil.urlEncode(browseNode.name)
-      new BrowseNodeXO(
-          id: isRoot(path) ? encodedPath : (path + '/' + encodedPath),
-          type: browseNode.assetId != null ? ASSET : browseNode.componentId != null ? COMPONENT : FOLDER,
-          text: browseNode.name,
-          leaf: browseNode.leaf,
-          componentId: browseNode.componentId != null ? browseNode.componentId.value : null,
-          assetId: browseNode.assetId != null ? browseNode.assetId.value : null
-      )
-    }
+    return browseNodeQueryService.getByPath(repository, pathSegments, configuration.maxNodes)
+        .collect { BrowseNode browseNode ->
+          def encodedPath = EncodingUtil.urlEncode(browseNode.name)
+          def type = browseNode.assetId != null ? ASSET : browseNode.componentId != null ? COMPONENT : FOLDER
+          new BrowseNodeXO(
+              id: isRoot(path) ? encodedPath : (path + '/' + encodedPath),
+              type: type,
+              text: browseNode.name,
+              leaf: browseNode.leaf,
+              componentId: browseNode.componentId?.value,
+              assetId: browseNode.assetId?.value,
+              packageUrl: browseNode.packageUrl
+          )
+        }
   }
 
   def isRoot(String path) {
     return '/'.equals(path)
   }
+
 }

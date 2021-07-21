@@ -17,6 +17,8 @@ import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 
+import javax.sql.DataSource;
+
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.stateguard.InvalidStateException;
 import org.sonatype.nexus.common.stateguard.StateGuardModule;
@@ -35,7 +37,7 @@ import org.mockito.ArgumentCaptor;
 import static com.google.inject.Guice.createInjector;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasEntry;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Matchers.eq;
@@ -76,8 +78,28 @@ public class DataStoreSupportTest
     }
 
     @Override
+    public DataSource getDataSource() {
+      return mock(DataSource.class);
+    }
+
+    @Override
     protected void doStart(final String storeName, final Map<String, String> attributes) throws Exception {
       // do nothing
+    }
+
+    @Override
+    public void freeze() {
+      // do nothing
+    }
+
+    @Override
+    public void unfreeze() {
+      // do nothing
+    }
+
+    @Override
+    public boolean isFrozen() {
+      return false;
     }
 
     @Override

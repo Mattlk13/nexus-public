@@ -15,9 +15,10 @@ package org.sonatype.nexus.datastore.api;
 import java.sql.Connection;
 import java.sql.SQLException;
 
+import javax.sql.DataSource;
+
 import org.sonatype.goodies.lifecycle.Lifecycle;
 import org.sonatype.nexus.transaction.TransactionalStore;
-import org.sonatype.nexus.transaction.UnitOfWork;
 
 /**
  * Each {@link DataStore} contains a number of {@link DataAccess} mappings accessible via {@link DataSession}s.
@@ -60,23 +61,44 @@ public interface DataStore<S extends DataSession<?>>
   Connection openConnection() throws SQLException;
 
   /**
+   * @since 3.29
+   */
+  DataSource getDataSource();
+
+  /**
    * Permanently stops this data store.
    */
   void shutdown() throws Exception;
 
+  // Note: we don't implement Freezable because data stores are prototype instances, not singleton components
+
+  /**
+   * Freezes the data store, disallowing writes.
+   *
+   * @since 3.21
+   */
+  void freeze();
+
+  /**
+   * Unfreezes the data store, allowing writes.
+   *
+   * @since 3.21
+   */
+  void unfreeze();
+
+  /**
+   * Is this data store currently frozen?
+   *
+   * @since 3.21
+   */
+  boolean isFrozen();
+
   /**
    * Backup this data store to the specified location.
    *
-   * @throws UnsupportedOperationException if the underlying DataStore does not support backing up
+   * @throws UnsupportedOperationException if the underlying data store does not support backing up
    *
-   * @since 3.next
+   * @since 3.21
    */
   void backup(String location) throws Exception;
-
-  /**
-   * {@link DataAccess} mapping for the given type; requires an open session.
-   */
-  static <D extends DataAccess> D access(Class<D> type) {
-    return UnitOfWork.<DataSession<?>> currentSession().access(type);
-  }
 }

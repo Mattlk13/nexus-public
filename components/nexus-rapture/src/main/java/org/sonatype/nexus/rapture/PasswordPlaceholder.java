@@ -13,6 +13,7 @@
 package org.sonatype.nexus.rapture;
 
 import javax.annotation.Nullable;
+import javax.validation.constraints.Null;
 
 import com.google.common.annotations.VisibleForTesting;
 
@@ -31,7 +32,7 @@ public class PasswordPlaceholder
    * Token used for passwords that are defined, but which are not transmitted.
    */
   @VisibleForTesting
-  static final String VALUE = "#~NEXUS~PLACEHOLDER~PASSWORD~#";
+  static final String VALUE = "#~NXRM~PLACEHOLDER~PASSWORD~#";
 
   /**
    * Returns password placeholder.
@@ -56,5 +57,13 @@ public class PasswordPlaceholder
    */
   public static boolean is(@Nullable final String value) {
     return VALUE.equals(value);
+  }
+
+  /**
+   * @param value
+   * @return true if the value is not the password placeholder
+   */
+  public static boolean isNot(@Nullable final String value) {
+    return !PasswordPlaceholder.is(value);
   }
 }

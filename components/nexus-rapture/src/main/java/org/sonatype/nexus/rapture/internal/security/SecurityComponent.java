@@ -41,7 +41,7 @@ import org.apache.shiro.authc.AuthenticationException;
 import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.authz.Permission;
 import org.apache.shiro.subject.Subject;
-import org.hibernate.validator.constraints.NotEmpty;
+import javax.validation.constraints.NotEmpty;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
@@ -146,6 +146,7 @@ public class SecurityComponent
     if (subject != null && subject.isAuthenticated()) {
       userXO = new UserXO();
       userXO.setAuthenticated(subject.isAuthenticated());
+      userXO.setAuthenticatedRealms(subject.getPrincipals().getRealmNames());
 
       // HACK: roles for the current user are not exposed to the UI.
       // HACK: but we need to know if user is admin or not for some things (like outreach)

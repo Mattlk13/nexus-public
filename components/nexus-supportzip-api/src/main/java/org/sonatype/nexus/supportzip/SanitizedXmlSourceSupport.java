@@ -22,6 +22,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.StringReader;
 
+import javax.xml.XMLConstants;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import javax.xml.transform.Transformer;
@@ -29,6 +30,8 @@ import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.sax.SAXSource;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
+
+import org.sonatype.nexus.common.io.SafeXml;
 
 import org.xml.sax.InputSource;
 import org.xml.sax.XMLReader;
@@ -72,13 +75,16 @@ public class SanitizedXmlSourceSupport
       try (OutputStream output = new BufferedOutputStream(stream)) {
 
         StreamSource styleSource = new StreamSource(new StringReader(stylesheet));
-        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+        TransformerFactory transformerFactory = SafeXml.newTransformerFactory();
         Transformer transformer = transformerFactory.newTransformer(styleSource);
 
-        SAXParserFactory parserFactory = SAXParserFactory.newInstance();
+        SAXParserFactory parserFactory = SafeXml.newSaxParserFactory();
         parserFactory.setNamespaceAware(true);
 
         SAXParser parser = parserFactory.newSAXParser();
+        parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+        parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+
         XMLReader reader = parser.getXMLReader();
         reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", false);
         reader.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);

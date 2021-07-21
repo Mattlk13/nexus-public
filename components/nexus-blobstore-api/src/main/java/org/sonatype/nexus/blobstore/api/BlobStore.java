@@ -12,9 +12,12 @@
  */
 package org.sonatype.nexus.blobstore.api;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
 import javax.annotation.Nullable;
@@ -22,6 +25,7 @@ import javax.annotation.Nullable;
 import org.sonatype.goodies.lifecycle.Lifecycle;
 import org.sonatype.nexus.transaction.TransactionalStore;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.hash.HashCode;
 import org.slf4j.Logger;
 
@@ -36,6 +40,16 @@ import org.slf4j.Logger;
 public interface BlobStore
     extends TransactionalStore<BlobSession<?>>, Lifecycle
 {
+  /**
+   * Suffix of the file that contains the bytes
+   */
+  String BLOB_FILE_CONTENT_SUFFIX = ".bytes";
+
+  /**
+   * Suffix of the file that contains the attributes
+   */
+  String BLOB_FILE_ATTRIBUTES_SUFFIX = ".properties";
+
   /**
    * An identifying name for disaster recovery purposes (which isn't required to be strictly unique)
    */
@@ -84,6 +98,15 @@ public interface BlobStore
    * @since 3.8
    */
   String DIRECT_PATH_BLOB_HEADER = "BlobStore.direct-path";
+
+  /**
+   * An associated repository name for disaster recovery purposes (which isn't required to be strictly unique)
+   *
+   * (uses 'Bucket' prefix for legacy compatibility reasons)
+   *
+   * @since 3.25
+   */
+  String REPO_NAME_HEADER = "Bucket.repo-name";
 
   /**
    * Creates a new blob. The header map must contain at least two keys:
@@ -205,6 +228,13 @@ public interface BlobStore
   Stream<BlobId> getBlobIdStream();
 
   /**
+   * Get a {@link Stream} of {@link BlobId} for blobs contained in this blob store that have been updated since the given number of days.
+   *
+   * @since 3.31
+   */
+  Stream<BlobId> getBlobIdUpdatedSinceStream(int sinceDays);
+
+  /**
    * Get a {@link Stream} of direct-path {@link BlobId}s under the specified path prefix.
    */
   Stream<BlobId> getDirectPathBlobIdStream(String prefix);
@@ -271,4 +301,37 @@ public interface BlobStore
    * @since 3.17
    */
   boolean isEmpty();
+
+  /**
+   * Permanently stops this blob store.
+   *
+   * @since 3.22
+   */
+  void shutdown() throws Exception;
+
+  /**
+   * Acts as a {@code BlobStore::hardDelete}, except it may be executed asynchronously.
+   *
+   * @since 3.29
+   */
+  default Future<Boolean> asyncDelete(BlobId blobId) {
+    return CompletableFuture.completedFuture(deleteHard(blobId));
+  }
+
+  default void validateCanCreateAndUpdate() throws Exception {
+  }
+
+  /**
+   * Flush blobstore metrics to disk, forgoing the typical wait period
+   * @throws IOException
+   */
+  @VisibleForTesting
+  default void flushMetrics() throws IOException {
+    //default impl does nothing
+  }
+
+  /**
+   * @since 3.31
+   */
+  RawObjectAccess getRawObjectAccess();
 }

@@ -12,52 +12,57 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.cleanup;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
+import java.util.function.IntSupplier;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 import javax.inject.Inject;
 
 import org.sonatype.nexus.cleanup.storage.CleanupPolicy;
 import org.sonatype.nexus.cleanup.storage.CleanupPolicyStorage;
 import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.storage.Asset;
-import org.sonatype.nexus.repository.storage.Component;
-import org.sonatype.nexus.repository.storage.Query;
-import org.sonatype.nexus.repository.storage.StorageFacet;
-import org.sonatype.nexus.repository.storage.StorageTx;
+import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.scheduling.TaskInfo;
 import org.sonatype.nexus.security.subject.FakeAlmightySubject;
 import org.sonatype.nexus.testsuite.testsupport.RepositoryITSupport;
+import org.sonatype.nexus.testsuite.testsupport.utility.SearchTestHelper;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.shiro.util.ThreadContext;
 import org.elasticsearch.index.query.BoolQueryBuilder;
+import org.elasticsearch.index.query.QueryBuilder;
+import org.elasticsearch.search.SearchHit;
 import org.junit.Before;
 import org.junit.experimental.categories.Category;
 
 import static com.google.common.collect.Iterables.size;
 import static com.google.common.collect.Sets.newLinkedHashSet;
+import static java.lang.String.format;
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static java.util.stream.StreamSupport.stream;
+import static org.awaitility.Awaitility.await;
 import static org.elasticsearch.index.query.QueryBuilders.boolQuery;
+import static org.elasticsearch.index.query.QueryBuilders.existsQuery;
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 import static org.elasticsearch.index.query.QueryBuilders.matchQuery;
 import static org.elasticsearch.index.query.QueryBuilders.rangeQuery;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.joda.time.DateTime.now;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.is;
+import static org.junit.Assert.assertTrue;
 import static org.sonatype.nexus.repository.search.DefaultComponentMetadataProducer.IS_PRERELEASE_KEY;
 import static org.sonatype.nexus.repository.search.DefaultComponentMetadataProducer.LAST_BLOB_UPDATED_KEY;
 import static org.sonatype.nexus.repository.search.DefaultComponentMetadataProducer.LAST_DOWNLOADED_KEY;
 import static org.sonatype.nexus.repository.search.DefaultComponentMetadataProducer.REGEX_KEY;
+import static org.sonatype.nexus.repository.search.query.RepositoryQueryBuilder.unrestricted;
 import static org.sonatype.nexus.scheduling.TaskState.WAITING;
 
 /**
@@ -79,9 +84,10 @@ public class CleanupITSupport
 
   protected static final int FIFTY_SECONDS = 50;
 
-  protected static final int TWO_SECONDS = 2;
+  protected static final int THREE_SECONDS = 3;
 
-  private static final BoolQueryBuilder SEARCH_ALL = boolQuery().must(matchAllQuery());
+  @Inject
+  private SearchTestHelper searchTestHelper;
 
   @Inject
   private CleanupPolicyStorage cleanupPolicyStorage;
@@ -91,61 +97,60 @@ public class CleanupITSupport
     ThreadContext.bind(FakeAlmightySubject.forUserId("disabled-security"));
   }
 
-  protected void setPolicyToBeLastBlobUpdatedInSeconds(final Repository repository,
-                                                       final int lastBlobUpdatedSeconds)
-      throws Exception
+  protected void setPolicyToBeLastBlobUpdatedInSeconds(
+      final Repository repository,
+      final int lastBlobUpdatedSeconds) throws Exception
   {
     setPolicyToBeLastBlobUpdatedInSeconds(testName.getMethodName(), repository, lastBlobUpdatedSeconds);
   }
 
-  protected void setPolicyToBeLastBlobUpdatedInSeconds(final String policyName,
-                                                       final Repository repository,
-                                                       final int lastBlobUpdatedSeconds)
-      throws Exception
+  protected void setPolicyToBeLastBlobUpdatedInSeconds(
+      final String policyName,
+      final Repository repository,
+      final int lastBlobUpdatedSeconds) throws Exception
   {
-    createOrUpdatePolicyWithCriteria(policyName,
-        repository.getFormat().getValue(),
+    createOrUpdatePolicyWithCriteria(policyName, repository.getFormat().getValue(),
         ImmutableMap.of(LAST_BLOB_UPDATED_KEY, Integer.toString(lastBlobUpdatedSeconds)));
     addPolicyToRepository(policyName, repository);
   }
 
-  protected void setPolicyToBeLastDownloadedInSeconds(final Repository repository, final int lastDownloadedSeconds)
-      throws Exception
+  protected void setPolicyToBeLastDownloadedInSeconds(
+      final Repository repository,
+      final int lastDownloadedSeconds) throws Exception
   {
     setPolicyToBeLastDownloadedInSeconds(testName.getMethodName(), repository, lastDownloadedSeconds);
   }
 
-  protected void setPolicyToBeLastDownloadedInSeconds(final String policyName,
-                                                      final Repository repository,
-                                                      final int lastDownloadedSeconds)
-      throws Exception
+  protected void setPolicyToBeLastDownloadedInSeconds(
+      final String policyName,
+      final Repository repository,
+      final int lastDownloadedSeconds) throws Exception
   {
-    createOrUpdatePolicyWithCriteria(policyName,
-        repository.getFormat().getValue(),
+    createOrUpdatePolicyWithCriteria(policyName, repository.getFormat().getValue(),
         ImmutableMap.of(LAST_DOWNLOADED_KEY, Integer.toString(lastDownloadedSeconds)));
     addPolicyToRepository(policyName, repository);
   }
 
-  protected void setPolicyToBePrerelease(final Repository repository, final boolean prerelease)
-      throws Exception
-  {
+  protected void setPolicyToBePrerelease(final Repository repository, final boolean prerelease) throws Exception {
     createOrUpdatePolicyWithCriteria(repository.getFormat().getValue(),
         ImmutableMap.of(IS_PRERELEASE_KEY, Boolean.toString(prerelease)));
     addPolicyToRepository(testName.getMethodName(), repository);
   }
 
-  protected void setPolicyToBeRegex(final Repository repository, final String regex)
-      throws Exception
-  {
-    createOrUpdatePolicyWithCriteria(repository.getFormat().getValue(), ImmutableMap.of(REGEX_KEY, regex));
+  protected void setPolicyToBeRegex(final Repository repository, final String regex) throws Exception {
+    String updatedRegex = regex;
+    if (isNewDb() && regex.charAt(0) >= 'a' && regex.charAt(0) <= 'z') {
+      updatedRegex = '/' + regex;
+    }
+    createOrUpdatePolicyWithCriteria(repository.getFormat().getValue(), ImmutableMap.of(REGEX_KEY, updatedRegex));
     addPolicyToRepository(testName.getMethodName(), repository);
   }
 
-  protected void setPolicyToBeMixed(final Repository repository,
-                                    final int lastBlobUpdatedSeconds,
-                                    final int lastDownloadedSeconds,
-                                    final boolean prerelease)
-      throws Exception
+  protected void setPolicyToBeMixed(
+      final Repository repository,
+      final int lastBlobUpdatedSeconds,
+      final int lastDownloadedSeconds,
+      final boolean prerelease) throws Exception
   {
     createOrUpdatePolicyWithCriteria(
         repository.getFormat().getValue(),
@@ -160,9 +165,10 @@ public class CleanupITSupport
     createOrUpdatePolicyWithCriteria(testName.getMethodName(), format, criteria);
   }
 
-  protected void createOrUpdatePolicyWithCriteria(final String policyName,
-                                                  final String format,
-                                                  final Map<String, String> criteria)
+  protected void createOrUpdatePolicyWithCriteria(
+      final String policyName,
+      final String format,
+      final Map<String, String> criteria)
   {
 
     CleanupPolicy existingPolicy = cleanupPolicyStorage.get(testName.getMethodName());
@@ -184,13 +190,13 @@ public class CleanupITSupport
   }
 
   protected void addPolicyToRepository(final String policyName, final Repository repository) throws Exception {
-
-    Map<String, Map<String, Object>> attributes = repository.getConfiguration().getAttributes();
+    Configuration configuration = repository.getConfiguration().copy();
+    Map<String, Map<String, Object>> attributes = configuration.getAttributes();
     Map<String, Object> cleanup = attributes.get(CLEANUP_KEY);
 
     if (nonNull(cleanup)) {
       @SuppressWarnings("unchecked")
-      Set<String> policies = (Set<String>) cleanup.get(POLICY_NAME_KEY);
+      Collection<String> policies = (Collection<String>) cleanup.get(POLICY_NAME_KEY);
 
       if (isNull(policies)) {
         policies = newLinkedHashSet();
@@ -210,36 +216,20 @@ public class CleanupITSupport
       attributes.put(CLEANUP_KEY, ImmutableMap.of(POLICY_NAME_KEY, policies));
     }
 
-    repositoryManager.update(repository.getConfiguration());
+    repositoryManager.update(configuration.copy());
   }
 
   protected void setLastDownloadedTimes(final String repositoryName, final int minusSeconds) {
-    updateAssets(repositoryName, asset -> asset.lastDownloaded(now().minusSeconds(minusSeconds)));
-  }
-
-  protected void updateAssets(final String repositoryName, final Consumer<Asset> updater) {
-    Repository repository = repositoryManager.get(repositoryName);
-    try (StorageTx tx = repository.facet(StorageFacet.class).txSupplier().get()) {
-      tx.begin();
-
-      Iterable<Asset> assets = tx.browseAssets(tx.findBucket(repository));
-
-      for (Asset asset : assets) {
-        updater.accept(asset);
-        tx.saveAsset(asset);
-      }
-
-      tx.commit();
-    }
+    componentAssetTestHelper.setLastDownloadedTime(repositoryManager.get(repositoryName), minusSeconds);
   }
 
   protected void runCleanupTask() throws Exception {
-    waitForSearch();
+    searchTestHelper.waitForSearch();
 
-    TaskInfo task = findCleanupTask().get();
+    TaskInfo task = findCleanupTask().orElseThrow(() -> new IllegalStateException("Cleanup task not found"));
 
     // taskScheduler may have beat us to it; only call runNow if we are in WAITING
-    waitFor(() -> task.getCurrentState().getState() == WAITING);
+    await().untilAsserted(() -> assertThat(task.getCurrentState().getState(), is(WAITING)));
 
     // run the cleanup task and wait for the underlying future to return to ensure completion
     task.runNow();
@@ -253,230 +243,270 @@ public class CleanupITSupport
         .findFirst();
   }
 
-  protected List<Component> findComponents(final String repositoryName) {
+  protected int countComponents(final String repositoryName) {
     Repository repository = repositoryManager.get(repositoryName);
-    try (StorageTx tx = repository.facet(StorageFacet.class).txSupplier().get()) {
-      tx.begin();
-
-      List<Component> components = new ArrayList<>();
-
-      tx.findComponents(Query.builder().where("1").eq("1").build(), ImmutableList.of(repository))
-          .iterator().forEachRemaining(components::add);
-
-      return components;
-    }
+    return componentAssetTestHelper.countComponents(repository);
   }
 
-  protected long countComponents(final String repositoryName) {
+  protected int countAssets(final String repositoryName) {
     Repository repository = repositoryManager.get(repositoryName);
-    try (StorageTx tx = repository.facet(StorageFacet.class).txSupplier().get()) {
-      tx.begin();
-
-      return tx.countComponents(Query.builder().where("1").eq("1").build(), ImmutableList.of(repository));
-    }
+    return componentAssetTestHelper.countAssets(repository);
   }
 
-  protected long countAssets(final String repositoryName) {
-    Repository repository = repositoryManager.get(repositoryName);
-    try (StorageTx tx = repository.facet(StorageFacet.class).txSupplier().get()) {
-      tx.begin();
-
-      return tx.countAssets(Query.builder().where("1").eq("1").build(), ImmutableList.of(repository));
-    }
-  }
-
-  protected void assertLastBlobUpdatedComponentsCleanedUp(final Repository repository,
-                                                          final long startingCount,
-                                                          final Supplier<Integer> artifactUploader,
-                                                          final long expectedCountAfterCleanup) throws Exception
+  protected void assertLastBlobUpdatedComponentsCleanedUp(
+      final Repository repository,
+      final int startingCount,
+      final IntSupplier artifactUploader,
+      final int expectedCountAfterCleanup) throws Exception
   {
-    setPolicyToBeLastBlobUpdatedInSeconds(repository, TWO_SECONDS);
+    setPolicyToBeLastBlobUpdatedInSeconds(repository, THREE_SECONDS);
     runCleanupTask();
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(startingCount)));
+    assertThat(countComponents(testName.getMethodName()), is(startingCount));
+    await().untilAsserted(() -> assertBrowseAllHasSize(startingCount));
 
-    //Guarantee that the TWO_SECOND lastBlobUpdated time has passed
-    Thread.sleep(3000L);
+    // Guarantee that the lastBlobUpdated time has passed
+    awaitLastBlobUpdatedTimePassed(THREE_SECONDS);
 
-    int numberUploaded = artifactUploader.get();
-    long totalComponents = startingCount + numberUploaded;
+    int numberUploaded = artifactUploader.getAsInt();
+    int totalComponents = startingCount + numberUploaded;
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(totalComponents)));
-
-    waitFor(() -> size(searchService.browse(SEARCH_ALL)) == totalComponents);
+    assertThat(countComponents(testName.getMethodName()), is(totalComponents));
+    await().untilAsserted(() -> assertBrowseAllHasSize(totalComponents));
 
     runCleanupTask();
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(expectedCountAfterCleanup)));
+    assertThat(countComponents(testName.getMethodName()), is(expectedCountAfterCleanup));
   }
 
-  protected void assertLastDownloadedComponentsCleanedUp(final Repository repository,
-                                                         final long startingCount,
-                                                         final Supplier<Integer> artifactUploader,
-                                                         final long expectedCountAfterCleanup) throws Exception
+  private void assertBrowseAllHasSize(final long size) {
+    assertThat(browseAll().count(), equalTo(size));
+  }
+
+  private void awaitLastBlobUpdatedTimePassed(final int time) {
+    await().atMost(time + 3, SECONDS).untilAsserted(() ->
+      assertThat(browse(lastBlobUpdatedQuery(time)).count(), equalTo(0L)));
+  }
+
+  private Stream<SearchHit> browseAll() {
+    return browse(searchAll());
+  }
+
+  private Stream<SearchHit> browse(final QueryBuilder queryBuilder) {
+    return stream(searchTestHelper.queryService().browse(queryBuilder).spliterator(), false);
+  }
+
+  private BoolQueryBuilder lastBlobUpdatedQuery(final int time) {
+    return searchAll().filter(rangeQuery(LAST_BLOB_UPDATED_KEY).gte(nowMinusSeconds(time)));
+  }
+
+  protected void assertLastDownloadedComponentsCleanedUp(
+      final Repository repository,
+      final int startingCount,
+      final IntSupplier artifactUploader,
+      final int expectedCountAfterCleanup) throws Exception
   {
     setPolicyToBeLastDownloadedInSeconds(repository, FIFTY_SECONDS);
     runCleanupTask();
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(startingCount)));
+    assertThat(countComponents(testName.getMethodName()), is(startingCount));
 
     setLastDownloadedTimes(testName.getMethodName(), ONE_HUNDRED_SECONDS);
+    await().untilAsserted(
+        () -> assertThat(size(searchTestHelper.queryService().browse(lastDownloadSet())), is(startingCount)));
 
-    int numberUploaded = artifactUploader.get();
-    long totalComponents = startingCount + numberUploaded;
+    int numberUploaded = artifactUploader.getAsInt();
+    int totalComponents = startingCount + numberUploaded;
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(totalComponents)));
+    assertThat(countComponents(testName.getMethodName()), is(totalComponents));
 
-    waitFor(() -> size(searchService.browse(SEARCH_ALL)) == totalComponents);
+    await()
+        .untilAsserted(() -> assertThat(size(searchTestHelper.queryService().browse(searchAll())), is(totalComponents)));
 
     runCleanupTask();
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(expectedCountAfterCleanup)));
+    assertThat(countComponents(testName.getMethodName()), is(expectedCountAfterCleanup));
   }
 
   protected void assertLastBlobUpdatedAndLastDownloadedComponentsCleanUp(
       final Repository repository,
-      final long startingCount,
-      final Supplier<Integer> lastDownloadedArtifactUploader,
-      final Supplier<Integer> componentsToKeepArtifactUploader,
-      final String[] versionsOfComponentsToKeep)
-      throws Exception
+      final int startingCount,
+      final IntSupplier lastDownloadedArtifactUploader,
+      final IntSupplier componentsToKeepArtifactUploader,
+      final String... versionsOfComponentsToKeep) throws Exception
   {
-    setPolicyToBeLastBlobUpdatedInSeconds("policyLastBlobUpdated", repository, TWO_SECONDS);
+    setPolicyToBeLastBlobUpdatedInSeconds("policyLastBlobUpdated", repository, THREE_SECONDS);
     setPolicyToBeLastDownloadedInSeconds("policyLastDownloaded", repository, FIFTY_SECONDS);
 
     runCleanupTask();
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(startingCount)));
+    assertThat(countComponents(testName.getMethodName()), is(startingCount));
 
-    // Target first three by last blob update, a guarantee that the TWO_SECOND lastBlobUpdated time has passed
-    Thread.sleep(3000L);
+    // Target first three by last blob update, a guarantee that the THREE_SECONDS lastBlobUpdated time has passed
+    awaitLastBlobUpdatedTimePassed(THREE_SECONDS);
 
     // Deploy new ones to be targeted by last downloaded date/time
-    int numberUploaded = lastDownloadedArtifactUploader.get();
+    int numberUploaded = lastDownloadedArtifactUploader.getAsInt();
 
     // Target all, but most specifically, the latest added components by updating their downloaded times
     setLastDownloadedTimes(testName.getMethodName(), ONE_HUNDRED_SECONDS);
+    await().untilAsserted(() -> assertThat(size(searchTestHelper.queryService().browse(lastDownloadSet())),
+        is(startingCount + numberUploaded)));
 
     // Deploy new ones to proof that neither policies effected the latest added component
-    int numberUploadedVersionsToKeep = componentsToKeepArtifactUploader.get();
-    long totalComponents = startingCount + numberUploaded + numberUploadedVersionsToKeep;
+    int numberUploadedVersionsToKeep = componentsToKeepArtifactUploader.getAsInt();
+    int totalComponents = startingCount + numberUploaded + numberUploadedVersionsToKeep;
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(totalComponents)));
+    assertThat(countComponents(testName.getMethodName()), is(totalComponents));
 
-    waitFor(() -> size(searchService.browse(SEARCH_ALL)) == totalComponents);
+    await()
+        .untilAsserted(() -> assertThat(size(searchTestHelper.queryService().browse(searchAll())), is(totalComponents)));
 
     runCleanupTask();
 
-    List<Component> components = findComponents(testName.getMethodName());
-    assertThat(components.size(), is(equalTo(numberUploadedVersionsToKeep)));
+    assertThat(countComponents(repository.getName()), is(numberUploadedVersionsToKeep));
 
     for (String versionKept : versionsOfComponentsToKeep) {
-      assertThat(anyComponentMatchVersion(components, versionKept), is(true));
+      assertTrue(versionKept, componentAssetTestHelper.componentExistsWithAssetPathMatching(repository,
+          componentMatchesByVersion(versionKept)));
     }
   }
 
-  protected void assertCleanupByPrerelease(final Repository repository,
-                                           final long countAfterReleaseCleanup,
-                                           final long countAfterPrereleaseCleanup) throws Exception
+  protected void assertCleanupByPrerelease(
+      final Repository repository,
+      final int countAfterReleaseCleanup,
+      final int countAfterPrereleaseCleanup) throws Exception
   {
-    assertCleanupByPrerelease(repository, countAfterReleaseCleanup, 0L, countAfterPrereleaseCleanup);
+    assertCleanupByPrerelease(repository, countAfterReleaseCleanup, 0, countAfterPrereleaseCleanup);
   }
 
-  protected void assertCleanupByPrerelease(final Repository repository,
-                                           final long countAfterReleaseCleanup,
-                                           final long assetCountAfterReleaseCleanup,
-                                           final long countAfterPrereleaseCleanup) throws Exception
+  protected void assertCleanupByPrerelease(
+      final Repository repository,
+      final int countAfterReleaseCleanup,
+      final int assetCountAfterReleaseCleanup,
+      final int countAfterPrereleaseCleanup) throws Exception
   {
-    long count = countComponents(repository.getName());
-    waitFor(() -> size(searchService
-        .browseUnrestrictedInRepos(SEARCH_ALL, ImmutableList.of(repository.getName()))) == count);
+    int count = countComponents(repository.getName());
+    await().untilAsserted(() -> assertThat(
+        size(searchTestHelper.queryService().browse(unrestricted(searchAll()).inRepositories(repository))), is(count)));
 
     setPolicyToBePrerelease(repository, true);
     runCleanupTask();
 
-    waitFor(() -> countComponents(testName.getMethodName()) == countAfterPrereleaseCleanup);
+    await().untilAsserted(() -> assertThat(countComponents(testName.getMethodName()), is(countAfterPrereleaseCleanup)));
 
     setPolicyToBePrerelease(repository, false);
     runCleanupTask();
 
-    waitFor(() -> countComponents(testName.getMethodName()) == countAfterReleaseCleanup);
+    await().untilAsserted(() -> assertThat(countComponents(testName.getMethodName()), is(countAfterReleaseCleanup)));
 
-    waitFor(() -> countAssets(testName.getMethodName()) == assetCountAfterReleaseCleanup);
+    await()
+        .untilAsserted(() -> assertThat(countAssets(testName.getMethodName()), is(assetCountAfterReleaseCleanup)));
   }
 
-  protected void assertCleanupByRegex(final Repository repository,
-                                      final long startingCount,
-                                      final String expression,
-                                      final Supplier<Integer> artifactUploader,
-                                      final long expectedCountAfterCleanup) throws Exception
+  protected Predicate<String> componentMatchesByVersion(final String version) {
+    return path -> path.contains(version);
+  }
+
+  protected void assertCleanupByRegex(
+      final Repository repository,
+      final int startingCount,
+      final String expression,
+      final IntSupplier artifactUploader,
+      final int expectedCountAfterCleanup) throws Exception
   {
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(startingCount)));
+    await()
+        .untilAsserted(() -> assertThat(size(searchTestHelper.queryService().browse(searchAll())), is(startingCount)));
 
-    int numberUploaded = artifactUploader.get();
-    long totalComponents = startingCount + numberUploaded;
+    int numberUploaded = artifactUploader.getAsInt();
+    int totalComponents = startingCount + numberUploaded;
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(totalComponents)));
+    assertThat(countComponents(testName.getMethodName()), is(totalComponents));
 
     setPolicyToBeRegex(repository, expression);
 
-    waitFor(() -> size(searchService.browse(SEARCH_ALL)) == totalComponents);
+    await()
+        .untilAsserted(() -> assertThat(size(searchTestHelper.queryService().browse(searchAll())), is(totalComponents)));
 
     runCleanupTask();
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(expectedCountAfterCleanup)));
+    assertThat(countComponents(testName.getMethodName()), is(expectedCountAfterCleanup));
   }
 
-  protected void assertCleanupByMixedPolicy(final Repository repository,
-                                            final long startingCount,
-                                            final long countAfterCleanup) throws Exception
+  protected void assertCleanupByMixedPolicy(
+      final Repository repository,
+      final int startingCount,
+      final int countAfterCleanup) throws Exception
   {
-    setPolicyToBeMixed(repository, TWO_SECONDS, FIFTY_SECONDS, true);
+    setPolicyToBeMixed(repository, THREE_SECONDS, FIFTY_SECONDS, true);
 
     runCleanupTask();
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(startingCount)));
+    assertThat(countComponents(testName.getMethodName()), is(startingCount));
 
-    //Guarantee that the TWO_SECOND lastBlobUpdated time has passed
-    Thread.sleep(TWO_SECONDS * 1000);
+    //Guarantee that the THREE_SECONDS lastBlobUpdated time has passed
+    awaitLastBlobUpdatedTimePassed(THREE_SECONDS);
 
     runCleanupTask();
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(startingCount)));
+    assertThat(countComponents(testName.getMethodName()), is(startingCount));
 
     setLastDownloadedTimes(testName.getMethodName(), FIFTY_SECONDS);
+    await().untilAsserted(
+        () -> assertThat(size(searchTestHelper.queryService().browse(lastDownloadSet())), is(startingCount)));
 
     waitForMixedSearch();
 
     runCleanupTask();
 
-    assertThat(countComponents(testName.getMethodName()), is(equalTo(countAfterCleanup)));
+    assertThat(countComponents(testName.getMethodName()), is(countAfterCleanup));
   }
 
-  private void waitForMixedSearch() throws Exception {
+  private void waitForMixedSearch() {
     BoolQueryBuilder query = boolQuery().must(matchAllQuery());
 
-    query.filter(
-        rangeQuery(LAST_DOWNLOADED_KEY)
-            .lte("now-" + FIFTY_SECONDS + "s")
-    ).filter(
-        rangeQuery(LAST_BLOB_UPDATED_KEY)
-            .lte("now-" + TWO_SECONDS + "s")
-    ).must(matchQuery(IS_PRERELEASE_KEY, true));
+    query.filter(rangeQuery(LAST_DOWNLOADED_KEY).lte(nowMinusSeconds(FIFTY_SECONDS)))
+        .filter(rangeQuery(LAST_BLOB_UPDATED_KEY).lte(nowMinusSeconds(THREE_SECONDS)))
+        .must(matchQuery(IS_PRERELEASE_KEY, true));
 
-    waitFor(() -> size(searchService.browseUnrestricted(query)) > 0);
+    await().untilAsserted(
+        () -> assertThat(size(searchTestHelper.queryService().browse(unrestricted(query))), greaterThan(0)));
   }
 
   public static String randomName() {
     return RandomStringUtils.random(5, "abcdefghijklmnopqrstuvwxyz".toCharArray());
   }
 
-  protected boolean anyComponentMatchVersion(final List<Component> components, final String version) {
-    // check that the version (or name as certain formats don't have a meaning full version, like docker) matches.
-    return components.stream().anyMatch(component -> componentMatchesByVersion(component, version));
+  private static BoolQueryBuilder searchAll() {
+    return boolQuery().must(matchAllQuery());
   }
 
-  protected boolean componentMatchesByVersion(final Component component, final String version) {
-    return version.equals(component.version()) || version.equals(component.name());
+  private static BoolQueryBuilder lastDownloadSet() {
+    return createLastDownloadQuery(boolQuery(), "1");
+  }
+
+  private static String nowMinusSeconds(final String value) {
+    return nowMinusSeconds(Integer.parseInt(value));
+  }
+
+  private static String nowMinusSeconds(final int value) {
+    return format("now-%ds", value);
+  }
+
+  private static BoolQueryBuilder createLastDownloadQuery(final BoolQueryBuilder query, final String value) {
+    BoolQueryBuilder neverDownloadedBuilder = boolQuery()
+        .mustNot(existsQuery(LAST_DOWNLOADED_KEY))
+        .filter(rangeQuery(LAST_BLOB_UPDATED_KEY).lte(nowMinusSeconds(value)));
+
+    BoolQueryBuilder lastDownloadedBuilder = boolQuery()
+        .must(rangeQuery(LAST_DOWNLOADED_KEY).lte(nowMinusSeconds(value)));
+
+    BoolQueryBuilder filterBuilder = boolQuery();
+    filterBuilder.should(lastDownloadedBuilder);
+    filterBuilder.should(neverDownloadedBuilder);
+
+    query.filter(filterBuilder);
+
+    return query;
   }
 }

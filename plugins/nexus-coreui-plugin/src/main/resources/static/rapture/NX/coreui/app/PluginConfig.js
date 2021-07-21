@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -40,13 +44,6 @@ Ext.define('NX.coreui.app.PluginConfig', {
       id: 'NX.coreui.controller.Assets',
       active: function () {
         return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
-      }
-    },
-    {
-      id: 'NX.coreui.controller.AnonymousSettings',
-      active: function() {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin') &&
-            !NX.State.getValue('reactFrontend', true);
       }
     },
     {
@@ -117,39 +114,10 @@ Ext.define('NX.coreui.app.PluginConfig', {
       }
     },
     {
-      id: 'NX.coreui.controller.Log',
-      active: function () {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
-      }
-    },
-    {
-      id: 'NX.coreui.controller.Loggers',
-      active: function () {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
-      }
-    },
-    {
-      id: 'NX.coreui.controller.Metrics',
-      active: function () {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
-      }
-    },
-    {
-      id: 'NX.coreui.controller.MetricHealth',
-      active: function () {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
-      }
-    },
-    {
       id: 'NX.coreui.migration.Controller',
       active: function () {
         return NX.State.getValue('migration', {})['enabled'] &&
             NX.app.Application.bundleActive('com.sonatype.nexus.plugins.nexus-migration-plugin');
-      }
-    },
-    { id: 'NX.coreui.controller.NuGetApiKey',
-      active: function () {
-        return NX.app.Application.bundleActive('com.sonatype.nexus.plugins.nexus-repository-nuget');
       }
     },
     {
@@ -174,13 +142,6 @@ Ext.define('NX.coreui.app.PluginConfig', {
       id: 'NX.coreui.controller.Blobstores',
       active: function () {
         return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
-      }
-    },
-    {
-      id: 'NX.coreui.controller.Datastores',
-      active: function () {
-        return NX.State.getValue('datastores') &&
-            NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
       }
     },
     {
@@ -232,9 +193,21 @@ Ext.define('NX.coreui.app.PluginConfig', {
       }
     },
     {
+      id: 'NX.coreui.controller.SearchConan',
+      active: function () {
+        return NX.app.Application.bundleActive('com.sonatype.nexus.plugins.nexus-repository-conan');
+      }
+    },
+    {
       id: 'NX.coreui.controller.SearchConda',
       active: function () {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-repository-conda');
+        return NX.app.Application.bundleActive('com.sonatype.nexus.plugins.nexus-repository-conda');
+      }
+    },
+    {
+      id: 'NX.coreui.controller.SearchGolang',
+      active: function () {
+        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-repository-golang');
       }
     },
     {
@@ -256,6 +229,12 @@ Ext.define('NX.coreui.app.PluginConfig', {
       }
     },
     {
+      id: 'NX.coreui.controller.SearchHelm',
+      active: function () {
+        return NX.app.Application.bundleActive('com.sonatype.nexus.plugins.nexus-repository-helm');
+      }
+    },
+    {
       id: 'NX.coreui.controller.SearchMaven',
       active: function () {
         return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-repository-maven');
@@ -264,7 +243,7 @@ Ext.define('NX.coreui.app.PluginConfig', {
     {
       id: 'NX.coreui.controller.SearchNpm',
       active: function () {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-repository-npm');
+        return NX.app.Application.bundleActive('com.sonatype.nexus.plugins.nexus-repository-npm');
       }
     },
     {
@@ -276,7 +255,13 @@ Ext.define('NX.coreui.app.PluginConfig', {
     {
       id: 'NX.coreui.controller.SearchPyPi',
       active: function () {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-repository-pypi');
+        return NX.app.Application.bundleActive('com.sonatype.nexus.plugins.nexus-repository-pypi');
+      }
+    },
+    {
+      id: 'NX.coreui.controller.SearchR',
+      active: function() {
+        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-repository-r');
       }
     },
     {
@@ -298,9 +283,9 @@ Ext.define('NX.coreui.app.PluginConfig', {
       }
     },
     {
-      id: 'NX.coreui.controller.Selectors',
-      active: function() {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
+      id: 'NX.coreui.controller.SearchP2',
+      active: function () {
+        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-repository-p2');
       }
     },
     {
@@ -319,24 +304,6 @@ Ext.define('NX.coreui.app.PluginConfig', {
       id: 'NX.coreui.controller.SslTrustStore',
       active: function () {
         return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-ssl-plugin');
-      }
-    },
-    {
-      id: 'NX.coreui.controller.SupportRequest',
-      active: function () {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
-      }
-    },
-    {
-      id: 'NX.coreui.controller.SupportZip',
-      active: function () {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
-      }
-    },
-    {
-      id: 'NX.coreui.controller.SysInfo',
-      active: function () {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
       }
     },
     {
@@ -365,23 +332,16 @@ Ext.define('NX.coreui.app.PluginConfig', {
       }
     },
     {
-      id: 'NX.coreui.controller.CleanupPolicies',
+      id: 'NX.coreui.controller.react.ReactViewController',
+      active: function() {
+        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
+      }
+    },
+    {
+      id: 'NX.coreui.controller.ProprietaryRepositories',
       active: function () {
         return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
       }
     },
-    {
-      id: 'NX.coreui.controller.RoutingRules',
-      active: function() {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin');
-      }
-    },
-    {
-      id: 'NX.coreui.controller.react.ReactViewController',
-      active: function() {
-        return NX.app.Application.bundleActive('org.sonatype.nexus.plugins.nexus-coreui-plugin') &&
-            NX.State.getValue('reactFrontend', true);
-      }
-    }
   ]
 });

@@ -13,14 +13,14 @@
 package org.sonatype.nexus.repository.browse.internal;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.repository.browse.QueryOptions;
+import org.sonatype.nexus.repository.query.QueryOptions;
 
 import org.junit.Before;
 import org.junit.Test;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.sonatype.nexus.repository.browse.internal.SuffixSqlBuilder.buildSuffix;
 
 public class SuffixSqlBuilderTest

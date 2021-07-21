@@ -25,6 +25,7 @@ import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobRef;
 import org.sonatype.nexus.blobstore.api.BlobStore;
+import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.common.hash.HashAlgorithm;
 import org.sonatype.nexus.common.hash.MultiHashingInputStream;
 import org.sonatype.nexus.common.node.NodeAccess;
@@ -55,13 +56,16 @@ public class BlobTx
 
   private final BlobStore blobStore;
 
+  private final BlobMetadataStorage blobMetadataStorage;
+
   private final Set<AssetBlob> newlyCreatedBlobs = Sets.newHashSet();
 
   private final Map<BlobRef, String> deletionRequests = Maps.newHashMap();
 
-  public BlobTx(final NodeAccess nodeAccess, final BlobStore blobStore) {
+  public BlobTx(final NodeAccess nodeAccess, final BlobStore blobStore, final BlobMetadataStorage blobMetadataStorage) {
     this.nodeAccess = checkNotNull(nodeAccess);
     this.blobStore = checkNotNull(blobStore);
+    this.blobMetadataStorage = checkNotNull(blobMetadataStorage);
   }
 
   public AssetBlob create(final InputStream inputStream,
@@ -104,25 +108,33 @@ public class BlobTx
   /**
    * Create an asset blob by copying the source blob. Throws an exception if the blob has already been deleted.
    *
-   * @param blobId      blobId of a blob already present in the blobstore
+   * @param blobRef     blobRef of a blob already present in the blobstore
    * @param headers     a map of headers to be applied to the resulting blob
    * @param hashes      the algorithms and precalculated hashes of the content
    * @return {@link AssetBlob}
    * @since 3.1
    */
-  public AssetBlob createByCopying(final BlobId blobId,
+  public AssetBlob createByCopying(final BlobRef blobRef,
                                    final Map<String, String> headers,
                                    final Map<HashAlgorithm, HashCode> hashes,
                                    final boolean hashesVerified)
   {
     checkArgument(!Strings2.isBlank(headers.get(BlobStore.CONTENT_TYPE_HEADER)), "Blob content type is required");
-    // This might be a place where we might consider passing in a BlobRef instead of a BlobId, for a post-fabric world
-    // where repositories could be writing/reading from multiple blob stores.
+
+    if (!blobRef.getStore().equals(blobStore.getBlobStoreConfiguration().getName())) {
+      throw new MissingBlobException(blobRef);
+    }
     return createAssetBlob(
-        store -> store.copy(blobId, headers),
+        store -> store.copy(blobRef.getBlobId(), headers),
         hashes,
         hashesVerified,
         headers.get(BlobStore.CONTENT_TYPE_HEADER));
+  }
+
+  public void attachAssetMetadata(final BlobId blobId,
+                                  final NestedAttributesMap componentAttributes,
+                                  final NestedAttributesMap assetAttributes) {
+    blobMetadataStorage.attach(blobStore, blobId, componentAttributes, assetAttributes);
   }
 
   private PrefetchedAssetBlob createPrefetchedAssetBlob(final Blob blob,

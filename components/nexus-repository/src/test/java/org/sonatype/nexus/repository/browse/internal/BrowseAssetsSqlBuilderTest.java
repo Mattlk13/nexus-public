@@ -15,7 +15,7 @@ package org.sonatype.nexus.repository.browse.internal;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.repository.browse.QueryOptions;
+import org.sonatype.nexus.repository.query.QueryOptions;
 import org.sonatype.nexus.repository.storage.AssetEntityAdapter;
 
 import org.junit.Before;
@@ -26,7 +26,7 @@ import static java.util.Collections.emptyList;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.when;
 
 public class BrowseAssetsSqlBuilderTest

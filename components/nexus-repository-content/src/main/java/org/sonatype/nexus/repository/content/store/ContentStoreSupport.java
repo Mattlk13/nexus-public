@@ -12,47 +12,122 @@
  */
 package org.sonatype.nexus.repository.content.store;
 
+import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
+
+import org.sonatype.nexus.common.property.SystemPropertiesHelper;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
-import org.sonatype.nexus.datastore.api.DataAccess;
+import org.sonatype.nexus.datastore.api.ContentDataAccess;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.datastore.api.DataSessionSupplier;
+import org.sonatype.nexus.datastore.api.DuplicateKeyException;
+import org.sonatype.nexus.transaction.Transaction;
+import org.sonatype.nexus.transaction.Transactional;
 import org.sonatype.nexus.transaction.TransactionalStore;
+import org.sonatype.nexus.transaction.UnitOfWork;
 
 import com.google.inject.TypeLiteral;
 import org.eclipse.sisu.inject.TypeArguments;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.sonatype.nexus.datastore.api.DataStore.access;
+import static org.sonatype.nexus.scheduling.CancelableHelper.checkCancellation;
 
 /**
  * Support class for transactional domain stores backed by a content data store.
  *
- * @since 3.next
+ * @since 3.21
  */
-public abstract class ContentStoreSupport<T extends DataAccess>
+public abstract class ContentStoreSupport<T extends ContentDataAccess>
     extends StateGuardLifecycleSupport
     implements TransactionalStore<DataSession<?>>
 {
+  private static final int DELETE_BATCH_SIZE_DEFAULT =
+      SystemPropertiesHelper.getInteger("nexus.content.deleteBatchSize", 1000);
+
   private final DataSessionSupplier sessionSupplier;
 
-  private final String storeName;
+  private final String contentStoreName;
 
   private final Class<T> daoClass;
 
   @SuppressWarnings({ "rawtypes", "unchecked" })
-  public ContentStoreSupport(final DataSessionSupplier sessionSupplier, final String storeName) {
+  protected ContentStoreSupport(final DataSessionSupplier sessionSupplier, final String contentStoreName) {
     this.sessionSupplier = checkNotNull(sessionSupplier);
-    this.storeName = checkNotNull(storeName);
+    this.contentStoreName = checkNotNull(contentStoreName);
+
+    // use generic type information to discover the DAO class from the concrete implementation
     TypeLiteral<?> superType = TypeLiteral.get(getClass()).getSupertype(ContentStoreSupport.class);
     this.daoClass = (Class) TypeArguments.get(superType, 0).getRawType();
   }
 
+  // alternative constructor that overrides discovery of the DAO class
+  protected ContentStoreSupport(final DataSessionSupplier sessionSupplier,
+                                final String contentStoreName,
+                                final Class<T> daoClass)
+  {
+    this.sessionSupplier = checkNotNull(sessionSupplier);
+    this.contentStoreName = checkNotNull(contentStoreName);
+    this.daoClass = checkNotNull(daoClass);
+  }
+
+  protected DataSession<?> thisSession() {
+    return UnitOfWork.currentSession();
+  }
+
   protected T dao() {
-    return access(daoClass);
+    return thisSession().access(daoClass);
+  }
+
+  /**
+   * Commits any batched changes so far.
+   *
+   * Also checks to see if the current (potentially long-running) operation has been cancelled.
+   */
+  protected void commitChangesSoFar() {
+    Transaction tx = UnitOfWork.currentTx();
+    tx.commit();
+    tx.begin();
+    checkCancellation();
+  }
+
+  protected int deleteBatchSize() {
+    return DELETE_BATCH_SIZE_DEFAULT;
   }
 
   @Override
   public DataSession<?> openSession() {
-    return sessionSupplier.openSession(storeName);
+    return sessionSupplier.openSession(contentStoreName);
+  }
+
+  /**
+   * Helper to find content in this store before creating it with the given supplier.
+   * Automatically retries the operation if another thread creates it just before us.
+   */
+  @Transactional(retryOn = DuplicateKeyException.class)
+  public <D> D getOrCreate(final Supplier<Optional<D>> find, final Supplier<D> create) {
+    return find.get().orElseGet(create);
+  }
+
+  public <D> D save(
+      final Supplier<Optional<D>> find,
+      final Supplier<D> create,
+      final UnaryOperator<D> update,
+      final Consumer<D> postTransaction)
+  {
+    D result = transactionalSave(find, create, update);
+    postTransaction.accept(result);
+    return result;
+  }
+
+  /**
+   * Helper to find content in this store before creating or updating it with the given suppliers.
+   *
+   * @since 3.30
+   */
+  @Transactional(retryOn = DuplicateKeyException.class)
+  protected  <D> D transactionalSave(final Supplier<Optional<D>> find, final Supplier<D> create, final UnaryOperator<D> update) {
+    return find.get().map(update).orElseGet(create);
   }
 }

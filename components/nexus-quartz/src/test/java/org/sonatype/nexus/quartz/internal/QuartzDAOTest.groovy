@@ -15,12 +15,14 @@ package org.sonatype.nexus.quartz.internal
 import java.util.concurrent.TimeUnit
 
 import org.sonatype.goodies.testsupport.TestSupport
+import org.sonatype.nexus.content.testsuite.groups.SQLTestGroup
 import org.sonatype.nexus.quartz.internal.store.ConfigStoreConnectionProvider
 import org.sonatype.nexus.testdb.DataSessionRule
 
 import org.hamcrest.Matchers
 import org.junit.Rule
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.quartz.DateBuilder
 import org.quartz.Job
 import org.quartz.JobDetail
@@ -39,16 +41,17 @@ import org.quartz.utils.DBConnectionManager
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import static com.jayway.awaitility.Awaitility.await
+import static org.awaitility.Awaitility.await
 import static org.hamcrest.Matchers.equalTo
 import static org.hamcrest.Matchers.hasSize
 import static org.hamcrest.Matchers.notNullValue
 import static org.hamcrest.collection.IsEmptyCollection.empty
-import static org.junit.Assert.assertThat
+import static org.hamcrest.MatcherAssert.assertThat
 import static org.quartz.JobBuilder.newJob
 import static org.quartz.TriggerBuilder.newTrigger
-import static org.sonatype.nexus.datastore.api.DataStoreManager.CONFIG_DATASTORE_NAME
+import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME
 
+@Category(SQLTestGroup.class)
 class QuartzDAOTest
     extends TestSupport
 {
@@ -59,7 +62,7 @@ class QuartzDAOTest
 
   @Test
   void 'Schema creation functions and is re-runnable'() {
-    sessionRule.openSession(CONFIG_DATASTORE_NAME).with { session ->
+    sessionRule.openSession(DEFAULT_DATASTORE_NAME).with { session ->
       QuartzDAO underTest = session.access(QuartzDAO)
       underTest.createSchema()
 
@@ -105,7 +108,7 @@ class QuartzDAOTest
   }
 
   private String getDatabaseId() {
-    sessionRule.openConnection(CONFIG_DATASTORE_NAME).with { con ->
+    sessionRule.openConnection(DEFAULT_DATASTORE_NAME).with { con ->
       return con.getMetaData().getDatabaseProductName()
     }
   }

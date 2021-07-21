@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.repository.search
 
+import java.util.function.Supplier
+
 import org.sonatype.goodies.testsupport.TestSupport
 import org.sonatype.nexus.common.entity.DetachedEntityId
 import org.sonatype.nexus.common.entity.EntityBatchEvent
@@ -20,6 +22,7 @@ import org.sonatype.nexus.common.event.EventManager
 import org.sonatype.nexus.common.stateguard.InvalidStateException
 import org.sonatype.nexus.repository.Repository
 import org.sonatype.nexus.repository.manager.RepositoryManager
+import org.sonatype.nexus.repository.search.index.SearchIndexService
 import org.sonatype.nexus.repository.storage.AssetCreatedEvent
 import org.sonatype.nexus.repository.storage.AssetDeletedEvent
 import org.sonatype.nexus.repository.storage.AssetUpdatedEvent
@@ -29,7 +32,6 @@ import org.sonatype.nexus.repository.storage.ComponentUpdatedEvent
 import org.sonatype.nexus.repository.storage.StorageFacet
 import org.sonatype.nexus.repository.storage.StorageTx
 
-import com.google.common.base.Suppliers
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -82,7 +84,7 @@ class IndexRequestProcessorTest
   EventManager eventManager
 
   @Mock
-  SearchService searchService
+  SearchIndexService searchIndexService
 
   @Mock
   Repository repository
@@ -100,11 +102,11 @@ class IndexRequestProcessorTest
 
   @Before
   public void setup() {
-    indexRequestProcessor = new IndexRequestProcessor(repositoryManager, eventManager, searchService, bulkProcessing)
+    indexRequestProcessor = new IndexRequestProcessor(repositoryManager, eventManager, searchIndexService, bulkProcessing)
     when(repositoryManager.get('testRepo')).thenReturn(repository)
     when(repository.optionalFacet(SearchFacet)).thenReturn(Optional.of(searchFacet))
     when(repository.facet(StorageFacet)).thenReturn(storageFacet)
-    when(storageFacet.txSupplier()).thenReturn(Suppliers.ofInstance(storageTx))
+    when(storageFacet.txSupplier()).thenReturn({ storageTx } as Supplier<StorageTx>)
   }
 
   def mockEntityEvent(eventType, componentId) {

@@ -6,6 +6,10 @@
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
  * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
  *
+ * Sonatype Nexus (TM) Open Source Version is distributed with Sencha Ext JS pursuant to a FLOSS Exception agreed upon
+ * between Sonatype, Inc. and Sencha Inc. Sencha Ext JS is licensed under GPL v3 and cannot be redistributed as part of a
+ * closed source work.
+ *
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
@@ -71,6 +75,7 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
     {ref: 'deleteAssetFolderButton', selector: 'nx-coreui-component-componentassetinfo button[action=deleteFolder]'},
     {ref: 'deleteFolderButton', selector: 'nx-coreui-component-componentfolderinfo button[action=deleteFolder]'},
     {ref: 'analyzeApplicationButton', selector: 'nx-coreui-component-componentinfo button[action=analyzeApplication]'},
+    {ref: 'viewVulnerabilitiesButton', selector: 'nx-coreui-component-componentinfo button[action=viewVulnerabilities]'},
     {ref: 'analyzeApplicationWindow', selector: 'nx-coreui-component-analyze-window'},
     {ref: 'rootContainer', selector: 'nx-main'},
     {ref: 'treeWarning', selector: 'nx-coreui-componentassettreefeature nx-coreui-component-asset-tree #warning'}
@@ -123,13 +128,17 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
         },
         'nx-coreui-componentassettreefeature treepanel': {
           select: me.selectNode,
-          itemkeydown: me.itemKeyDown
-        },
+          itemkeydown: me.itemKeyDown,
+          itemexpand: me.itemExpand
+  },
         'nx-coreui-component-componentinfo button[action=deleteComponent]': {
           click: me.deleteComponent
         },
         'nx-coreui-component-componentinfo button[action=analyzeApplication]': {
           click: me.mixins.componentUtils.openAnalyzeApplicationWindow
+        },
+        'nx-coreui-component-componentinfo button[action=viewVulnerabilities]': {
+          click: me.mixins.componentUtils.viewVulnerabilities
         },
         'nx-coreui-component-componentassetinfo button[action=deleteAsset]': {
           click: me.deleteAsset
@@ -139,12 +148,6 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
         },
         'nx-coreui-component-componentfolderinfo button[action=deleteFolder]': {
           click: me.deleteFolder
-        },
-        'nx-coreui-component-analyze-window button[action=analyze]': {
-          click: me.analyzeAsset
-        },
-        'nx-coreui-component-analyze-window combobox[name="asset"]': {
-          select: me.selectedApplicationChanged
         },
         'nx-coreui-componentassettreefeature button[action=upload]': {
           click: me.onClickUploadButton
@@ -163,6 +166,14 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
       'tree-component': {
         file: 'box_front.png',
         variants: ['x16']
+      },
+      'tree-component-vulnerable': {
+        file: 'box_front_error.png',
+        variants: ['x16']
+      },
+      'vulnerability': {
+        file: 'vulnerability.png',
+        variants: ['x16', 'x32']
       },
       'tree-asset': {
         file: 'page_white_stack.png',
@@ -363,6 +374,29 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
     }
   },
 
+  itemExpand: function(view) {
+    var childNodes = Ext.Array.filter(view.childNodes, function(node) {
+      return node.data.packageUrl;
+    });
+    var packageUrls = Ext.Array.map(childNodes, function(node) {
+      return node.data.packageUrl;
+    });
+    if (packageUrls.length > 0 && NX.direct.coreui_Vulnerability) {
+      NX.direct.coreui_Vulnerability.read(packageUrls, function(response) {
+        if (response.success && response.data) {
+          Ext.Array.each(view.childNodes, function(node) {
+            var report = response.data[node.data.packageUrl];
+            if (report && report.count > 0) {
+              node.set('vulnerable', true);
+              node.set('iconCls', 'nx-icon-vulnerability-x16');
+              node.commit();
+            }
+          })
+        }
+      });
+    }
+  },
+
   selectNode: function(view, node) {
     var me = this,
         componentInfoPanel,
@@ -390,6 +424,8 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
           me.setComponentModel(componentModel);
          }
       });
+
+      me.handleVulnerabilitiesPanel(node, componentInfoPanel);
     }
     else if ('asset' === node.get('type')) {
       assetInfoPanel = me.getComponentAssetInfo();
@@ -406,10 +442,12 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
           me.maybeUnmask(assetInfoPanel);
         }
       });
+
+      me.handleVulnerabilitiesPanel(node, assetInfoPanel);
     }
     else if ('folder' === node.get('type')) {
       var folderInfoPanel = me.getComponentFolderInfo();
-      folderInfoPanel.setTitle(Ext.util.Format.htmlEncode(decodeURI(node.getId())));
+      folderInfoPanel.setTitle(me.buildPathString(node));
       folderInfoPanel.setIconCls(me.mixins.componentUtils.getIconForAsset(node).get('cls'));
       folderInfoPanel.show();
 
@@ -419,6 +457,28 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
       folderInfoPanel.setModel({repositoryName: me.getCurrentRepository().get('name'), folderName: node.get('text'), path: node.get('id')});
       me.updateDeleteFolderButton(me.getDeleteFolderButton(), me.getCurrentRepository(), node.get('id'));
       me.maybeUnmask(folderInfoPanel);
+    }
+  },
+
+  handleVulnerabilitiesPanel: function(node, panel) {
+    var me = this;
+    if ('OSS' === NX.State.getEdition() && me.getCurrentRepository().get('type') === 'proxy' &&
+        NX.direct.coreui_Vulnerability) {
+      var packageUrl = node.get('packageUrl');
+      NX.direct.coreui_Vulnerability.read([packageUrl],
+          function(response) {
+            var vulnerabilityPanel = panel.getVulnerabilityPanel();
+            if(response.success && response.data) {
+              vulnerabilityPanel.setVisible(true);
+              var vulnReport = response.data[packageUrl];
+              me.setVulnerabilityInfo(vulnerabilityPanel, vulnReport);
+              me.updateVulnerabilitiesButton(panel, vulnReport);
+            }
+            else {
+              vulnerabilityPanel.setVisible(false);
+              me.updateVulnerabilitiesButton(panel, null);
+            }
+          });
     }
   },
 
@@ -473,6 +533,25 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
     }
   },
 
+  setVulnerabilityInfo: function(vulnerabilityPanel, vulnerabilityInfo) {
+    var summary = {};
+
+    if (vulnerabilityInfo) {
+        summary[NX.I18n.get('Vulnerability_Count')] = Ext.htmlEncode(vulnerabilityInfo.count);
+        summary[NX.I18n.get('Vulnerability_Ref')] = NX.util.Url.asLink(vulnerabilityInfo.reference);
+        vulnerabilityPanel.referenceLink = vulnerabilityInfo.reference;
+        if(vulnerabilityInfo.count > 0) {
+          vulnerabilityPanel.items.items[0].header.addCls('vulnerabilities');
+        } else {
+          vulnerabilityPanel.items.items[0].header.removeCls('vulnerabilities');
+        }
+    }
+    else {
+      summary[NX.I18n.get('Vulnerability_Information')] = Ext.htmlEncode(NX.I18n.get('Vulnerability_NotScanned'));
+    }
+    vulnerabilityPanel.showInfo(summary);
+  },
+
   isPanelVisible : function(panel) {
     return panel && panel.isVisible();
   },
@@ -510,7 +589,7 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
     var path = '';
     //node.parentNode check will skip the trees root node (labeld Root and hidden)
     while (node != null && node.parentNode != null) {
-      path = node.get('text') + '/' + path;
+      path = path ? (node.get('text') + '/' + path) : node.get('text');
       node = node.parentNode;
     }
 
@@ -666,7 +745,8 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
           if (Ext.isObject(response) && response.success && Ext.isArray(response.data)) {
             me.removeNodeFromTree(selectedNode);
             Ext.each(response.data, function (nodeId) {
-              var node = treePanel.getStore().findNode('id', nodeId);
+              var nodePath = nodeId.charAt(0) === '/' ? nodeId.substring(1) : nodeId;
+              var node = treePanel.getStore().findNode('id', nodePath);
               if (node) {
                 me.removeNodeFromTree(node);
               }
@@ -722,7 +802,7 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
           NX.I18n.get('FolderInfo_Delete_Title'),
           NX.I18n.format('FolderInfo_Delete_Text', Ext.htmlEncode(model.folderName)),
           function() {
-            NX.direct.coreui_Component.deleteFolder(model.path, model.repositoryName,
+            NX.direct.coreui_Component.deleteFolder(decodeURIComponent(model.path.replace(/\+/g, ' ')), model.repositoryName,
                 function(response) {
                   if (Ext.isObject(response) && response.success) {
                     NX.Messages.success(NX.I18n.format('FolderInfo_Delete_Success'));
@@ -757,54 +837,6 @@ Ext.define('NX.coreui.controller.ComponentAssetTree', {
 
   fetchComponentModelFromView: function() {
     return this.getComponentInfo().componentModel;
-  },
-
-  /**
-   * Analyze a component using the AHC service
-   *
-   * @private
-   */
-  analyzeAsset: function(button) {
-    var me = this,
-        componentInfo = me.getComponentInfo(),
-        win,
-        form,
-        formValues,
-        repositoryName,
-        assetId;
-
-    if (componentInfo) {
-      win = button.up('window');
-      form = button.up('form');
-      formValues = form.getForm().getValues();
-      repositoryName = componentInfo.componentModel.get('repositoryName');
-      assetId = form.down('combo[name="asset"]').getValue();
-      NX.direct.ahc_Component.analyzeAsset(repositoryName, assetId, formValues.emailAddress, formValues.password,
-          formValues.proprietaryPackages, formValues.reportLabel, function (response) {
-            if (Ext.isObject(response) && response.success) {
-              win.close();
-              NX.Messages.success(NX.I18n.get('ComponentDetails_Analyze_Success'));
-            }
-          });
-    }
-  },
-
-  /**
-   * When app changes, update the reportName as well
-   */
-  selectedApplicationChanged: function(combo) {
-    var me = this,
-        componentInfo = me.getComponentInfo(),
-        labelField;
-
-    if (componentInfo) {
-      labelField = me.getAnalyzeApplicationWindow().down('textfield[name="reportLabel"]');
-      if (!labelField.isDirty()) {
-        //I am setting the original value so it won't be marked dirty unless user touches it
-        labelField.originalValue = combo.getRawValue();
-        labelField.setValue(combo.getRawValue());
-      }
-    }
   },
 
   removeNodeFromTree: function(node) {

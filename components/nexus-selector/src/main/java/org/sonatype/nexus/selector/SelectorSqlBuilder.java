@@ -34,7 +34,11 @@ public class SelectorSqlBuilder
 
   private String propertyPrefix = "";
 
+  private String parameterNamePrefix = "";
+
   private String parameterPrefix = "";
+
+  private String parameterSuffix = "";
 
   /**
    * Aliases the given property name to a specific record field.
@@ -61,6 +65,22 @@ public class SelectorSqlBuilder
   }
 
   /**
+   * Sets the unique prefix to use for generated parameter names.
+   */
+  public SelectorSqlBuilder parameterNamePrefix(final String namePrefix) {
+    parameterNamePrefix = checkNotNull(namePrefix);
+    return this;
+  }
+
+  /**
+   * Sets the unique suffix to use for generated parameter names.
+   */
+  public SelectorSqlBuilder parameterSuffix(final String suffix) {
+    parameterSuffix = checkNotNull(suffix);
+    return this;
+  }
+
+  /**
    * Appends the given property to the query, aliasing/prefixing it as necessary.
    */
   public void appendProperty(final String property) {
@@ -74,8 +94,8 @@ public class SelectorSqlBuilder
    * Appends the given literal to the query; storing it as a parameter under a generated name.
    */
   public void appendLiteral(final String literal) {
-    String parameter = parameterPrefix + queryParameters.size();
-    queryBuilder.append(':').append(parameter);
+    String parameter = parameterNamePrefix + queryParameters.size();
+    queryBuilder.append(parameterPrefix).append(parameter).append(parameterSuffix);
     queryParameters.put(parameter, literal);
   }
 

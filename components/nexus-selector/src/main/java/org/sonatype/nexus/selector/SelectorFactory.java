@@ -25,6 +25,7 @@ import org.apache.commons.jexl3.JexlException;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.String.format;
+import static org.sonatype.nexus.common.app.FeatureFlags.ORIENT_ENABLED;
 import static org.sonatype.nexus.common.text.Strings2.upper;
 import static org.sonatype.nexus.selector.CselValidator.validateCselExpression;
 import static org.sonatype.nexus.selector.JexlEngine.expandExceptionDetail;
@@ -43,9 +44,17 @@ public class SelectorFactory
 
   private final ConstraintViolationFactory constraintViolationFactory;
 
+  private final CselToSql cselToSql;
+
+  private boolean orientEnabled;
+
   @Inject
-  public SelectorFactory(final ConstraintViolationFactory constraintViolationFactory) {
+  public SelectorFactory(final ConstraintViolationFactory constraintViolationFactory,
+                         final CselToSql cselToSql,
+                         @Named(ORIENT_ENABLED) final boolean orientEnabled) {
     this.constraintViolationFactory = checkNotNull(constraintViolationFactory);
+    this.cselToSql = checkNotNull(cselToSql);
+    this.orientEnabled = orientEnabled;
   }
 
   /**
@@ -81,11 +90,12 @@ public class SelectorFactory
    * Creates a new {@link Selector} for the given expression and type.
    */
   public Selector createSelector(final String type, final String expression) {
+    boolean shouldTrimLeadingSlash = orientEnabled;
     switch (type) {
       case JexlSelector.TYPE:
-        return new JexlSelector(jexlEngine.buildExpression(expression));
+        return new JexlSelector(jexlEngine.buildExpression(expression, shouldTrimLeadingSlash));
       case CselSelector.TYPE:
-        return new CselSelector(jexlEngine.buildExpression(expression));
+        return new CselSelector(cselToSql, jexlEngine.buildExpression(expression, shouldTrimLeadingSlash));
       default:
         throw new IllegalArgumentException("Unknown selector type: " + type);
     }

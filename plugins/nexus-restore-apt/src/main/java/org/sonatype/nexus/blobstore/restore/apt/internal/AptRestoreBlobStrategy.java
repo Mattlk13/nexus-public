@@ -13,112 +13,98 @@
 package org.sonatype.nexus.blobstore.restore.apt.internal;
 
 import java.io.IOException;
-import java.util.List;
 import java.util.Optional;
+import java.util.Properties;
 
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
-import org.sonatype.nexus.blobstore.api.BlobStoreManager;
-import org.sonatype.nexus.blobstore.restore.BaseRestoreBlobStrategy;
+import org.sonatype.nexus.blobstore.api.Blob;
+import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.restore.RestoreBlobData;
-import org.sonatype.nexus.common.hash.HashAlgorithm;
+import org.sonatype.nexus.blobstore.restore.datastore.BaseRestoreBlobStrategy;
+import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.common.log.DryRunPrefix;
-import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.apt.AptRestoreFacet;
+import org.sonatype.nexus.repository.apt.AptFormat;
+import org.sonatype.nexus.repository.apt.datastore.AptContentFacet;
+import org.sonatype.nexus.repository.apt.debian.Utils;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
-import org.sonatype.nexus.repository.storage.AssetBlob;
-import org.sonatype.nexus.repository.storage.Query;
+import org.sonatype.nexus.repository.view.Payload;
+import org.sonatype.nexus.repository.view.payloads.BlobPayload;
 
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.collect.Lists.newArrayList;
-import static org.eclipse.aether.util.StringUtils.isEmpty;
-import static org.sonatype.nexus.common.hash.HashAlgorithm.MD5;
-import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA1;
-import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA256;
+import static org.sonatype.nexus.blobstore.api.BlobAttributesConstants.HEADER_PREFIX;
+import static org.sonatype.nexus.blobstore.api.BlobStore.CONTENT_TYPE_HEADER;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
 
 /**
- * @since 3.17
+ * @since 3.31
  */
-@Named("apt")
+@FeatureFlag(name = DATASTORE_ENABLED)
+@Named(AptFormat.NAME)
 @Singleton
 public class AptRestoreBlobStrategy
-    extends BaseRestoreBlobStrategy<AptRestoreBlobData>
+    extends BaseRestoreBlobStrategy<RestoreBlobData>
 {
+  private final RepositoryManager repositoryManager;
+
   @Inject
-  public AptRestoreBlobStrategy(final NodeAccess nodeAccess,
-                                final RepositoryManager repositoryManager,
-                                final BlobStoreManager blobStoreManager,
-                                final DryRunPrefix dryRunPrefix)
+  public AptRestoreBlobStrategy(
+      final DryRunPrefix dryRunPrefix,
+      final RepositoryManager repositoryManager)
   {
-    super(nodeAccess, repositoryManager, blobStoreManager, dryRunPrefix);
+    super(dryRunPrefix);
+    this.repositoryManager = repositoryManager;
   }
 
   @Override
-  protected AptRestoreBlobData createRestoreData(final RestoreBlobData blobData) {
-    checkState(!isEmpty(blobData.getBlobName()), "Blob name cannot be empty");
-    return new AptRestoreBlobData(blobData);
-  }
+  protected boolean canAttemptRestore(
+      @Nonnull final RestoreBlobData data)
+  {
+    Repository repository = data.getRepository();
 
-  @Override
-  protected boolean canAttemptRestore(@Nonnull final AptRestoreBlobData data) {
-    Repository repository = data.getBlobData().getRepository();
-    Optional<AptRestoreFacet> aptRestoreFacetFacet = repository.optionalFacet(AptRestoreFacet.class);
-
-    if (!aptRestoreFacetFacet.isPresent()) {
-      log.warn("Skipping as APT Restore Facet not found on repository: {}", repository.getName());
+    Optional<AptContentFacet> facet = repository.optionalFacet(AptContentFacet.class);
+    if (!facet.isPresent()) {
+      log.warn("Skipping as {} not found on repository: {}", facet.getClass().getSimpleName(), repository.getName());
       return false;
     }
     return true;
   }
 
   @Override
-  protected String getAssetPath(@Nonnull final AptRestoreBlobData data) {
-    return data.getBlobData().getBlobName();
-  }
-
-  @Override
-  protected boolean assetExists(@Nonnull final AptRestoreBlobData data) {
-    AptRestoreFacet facet = data.getBlobData().getRepository().facet(AptRestoreFacet.class);
-    return facet.assetExists(data.getBlobData().getBlobName());
-  }
-
-  @Override
-  protected void createAssetFromBlob(@Nonnull final AssetBlob assetBlob, @Nonnull final AptRestoreBlobData data)
-      throws IOException
+  protected void createAssetFromBlob(
+      final Blob assetBlob, final RestoreBlobData data) throws IOException
   {
-    final Repository repository = data.getBlobData().getRepository();
-    AptRestoreFacet facet = repository.facet(AptRestoreFacet.class);
-    final String path = data.getBlobData().getBlobName();
-
-    facet.restore(assetBlob, path);
+    String assetPath = getAssetPath(data);
+    String contentType = data.getProperty(HEADER_PREFIX + CONTENT_TYPE_HEADER);
+    Payload payload = new BlobPayload(assetBlob, contentType);
+    data.getRepository()
+        .facet(AptContentFacet.class)
+        .put(assetPath, payload);
   }
 
   @Override
-  protected boolean componentRequired(final AptRestoreBlobData data) {
-    final Repository repository = data.getBlobData().getRepository();
-    final AptRestoreFacet facet = repository.facet(AptRestoreFacet.class);
-    return facet.componentRequired(data.getBlobData().getBlobName());
+  protected String getAssetPath(@Nonnull final RestoreBlobData data) {
+    return data.getBlobName();
   }
 
   @Override
-  protected Repository getRepository(@Nonnull final AptRestoreBlobData data) {
-    return data.getBlobData().getRepository();
+  protected RestoreBlobData createRestoreData(
+      final Properties properties, final Blob blob, final BlobStore blobStore)
+  {
+    return new RestoreBlobData(blob, properties, blobStore, repositoryManager);
   }
 
   @Override
-  protected Query getComponentQuery(final AptRestoreBlobData data) throws IOException {
-    final Repository repository = data.getBlobData().getRepository();
-    final AptRestoreFacet facet = repository.facet(AptRestoreFacet.class);
-    return facet.getComponentQuery(data.getBlobData().getBlob());
+  protected boolean isComponentRequired(final RestoreBlobData data) {
+    String blobName = data.getBlobName();
+    return Utils.isDebPackageContentType(blobName);
   }
 
-  @Nonnull
   @Override
-  protected List<HashAlgorithm> getHashAlgorithms() {
-    return newArrayList(MD5, SHA1, SHA256);
+  public void after(final boolean updateAssets, final Repository repository) {
+    //no-op
   }
 }

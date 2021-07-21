@@ -175,6 +175,9 @@ public class QuartzTaskJobListener
         state.isDone() ? future : null
     );
 
+    taskInfo.setLastResult(context.getResult());
+    taskInfo.getContext().put("duration_ms", runDuration);
+
     // fire events
     switch (endState) {
       case OK:

@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.sonatype.nexus.buildsupport</groupId>
     <artifactId>nexus-buildsupport</artifactId>
-    <version>3.21.0-SNAPSHOT</version>
+    <version>3.33.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>nexus-buildsupport-logging</artifactId>
@@ -28,9 +28,9 @@
   <packaging>pom</packaging>
 
   <properties>
-    <slf4j.version>1.7.25</slf4j.version>
-    <logback.version>1.2.2</logback.version>
-    <pax-logging.version>1.10.0</pax-logging.version>
+    <slf4j.version>1.7.30</slf4j.version>
+    <logback.version>1.2.3</logback.version>
+    <pax-logging.version>2.0.6</pax-logging.version>
   </properties>
 
   <dependencyManagement>

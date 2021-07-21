@@ -13,6 +13,7 @@
 package org.sonatype.nexus.blobstore;
 
 import java.util.List;
+import java.util.Map;
 
 import javax.annotation.Nullable;
 
@@ -26,6 +27,11 @@ import org.sonatype.nexus.formfields.FormField;
  */
 public interface BlobStoreDescriptor
 {
+  /**
+   * A url-friendly identifier. This must match the identifier used for the blob store REST apis.
+   */
+  String getId();
+
   /**
    * A user friendly name of the blob store type to be presented in UI.
    *
@@ -92,4 +98,15 @@ public interface BlobStoreDescriptor
   default boolean configHasDependencyOn(BlobStoreConfiguration config, String blobStoreName) {
     return false;
   }
+
+  /**
+   * @return true if the the blob store has a connection to be tested by the backend.
+   *
+   * @since 3.30
+   */
+  default boolean isConnectionTestable() {
+    return false;
+  }
+
+  default Map<String, List<SelectOption>> getDropDownValues() {return null;}
 }

@@ -25,14 +25,18 @@ import java.util.Set;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import javax.inject.Provider;
 
 import org.sonatype.nexus.blobstore.api.Blob;
+import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobRef;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.common.entity.EntityHelper;
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.common.hash.HashAlgorithm;
+import org.sonatype.nexus.common.io.InputStreamSupplier;
+import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.common.stateguard.Guarded;
 import org.sonatype.nexus.common.stateguard.StateGuard;
 import org.sonatype.nexus.common.stateguard.StateGuardAware;
@@ -43,9 +47,12 @@ import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.IllegalOperationException;
 import org.sonatype.nexus.repository.InvalidContentException;
 import org.sonatype.nexus.repository.Repository;
+import org.sonatype.nexus.repository.config.WritePolicy;
+import org.sonatype.nexus.repository.mime.ContentValidator;
+import org.sonatype.nexus.repository.move.RepositoryMoveService;
+import org.sonatype.nexus.repository.view.payloads.TempBlob;
 import org.sonatype.nexus.transaction.RetryController;
 
-import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMap.Builder;
@@ -60,7 +67,9 @@ import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
 import static java.lang.String.format;
+import static org.apache.commons.lang3.StringUtils.containsIgnoreCase;
 import static org.sonatype.nexus.common.entity.EntityHelper.id;
 import static org.sonatype.nexus.repository.proxy.ProxyFacetSupport.isDownloading;
 import static org.sonatype.nexus.repository.storage.Asset.CHECKSUM;
@@ -112,6 +121,10 @@ public class StorageTxImpl
 
   private final ComponentFactory componentFactory;
 
+  private final Provider<RepositoryMoveService> repositoryMoveStoreProvider;
+
+  private final NodeAccess nodeAccess;
+
   private int retries = 0;
 
   private String reason = DEFAULT_REASON;
@@ -129,7 +142,9 @@ public class StorageTxImpl
                        final boolean strictContentValidation,
                        final ContentValidator contentValidator,
                        final MimeRulesSource mimeRulesSource,
-                       final ComponentFactory componentFactory)
+                       final ComponentFactory componentFactory,
+                       final Provider<RepositoryMoveService> repositoryMoveStoreProvider,
+                       final NodeAccess nodeAccess)
   {
     this.createdBy = checkNotNull(createdBy);
     this.createdByIp = checkNotNull(createdByIp);
@@ -145,6 +160,8 @@ public class StorageTxImpl
     this.contentValidator = checkNotNull(contentValidator);
     this.mimeRulesSource = checkNotNull(mimeRulesSource);
     this.componentFactory = checkNotNull(componentFactory);
+    this.repositoryMoveStoreProvider = checkNotNull(repositoryMoveStoreProvider);
+    this.nodeAccess = checkNotNull(nodeAccess);
 
     // This is only here for now to yell in case of nested TX
     // To be discussed in future, or at the point when we will have need for nested TX
@@ -301,6 +318,26 @@ public class StorageTxImpl
 
   @Override
   @Guarded(by = ACTIVE)
+  public Iterable<Asset> browseAllPartiallyByLimit(final Query query, final Bucket bucket)
+  {
+    return assetEntityAdapter
+        .browseAllPartiallyByLimit(db, query.getWhere(), query.getParameters(), ImmutableList.of(bucket));
+  }
+
+  @Override
+  @Guarded(by = ACTIVE)
+  public Iterable<Asset> browseAssets(
+      final Query query,
+      final Bucket bucket,
+      final int bufferSize,
+      final int bufferTimeoutSeconds)
+  {
+    return assetEntityAdapter.browseByQueryAsync(db, query.getWhere(), query.getParameters(), ImmutableList.of(bucket),
+        query.getQuerySuffix(), bufferSize, bufferTimeoutSeconds);
+  }
+
+  @Override
+  @Guarded(by = ACTIVE)
   public Asset firstAsset(final Component component) {
     return Iterables.getFirst(browseAssets(component), null);
   }
@@ -390,6 +427,24 @@ public class StorageTxImpl
   @Guarded(by = ACTIVE)
   public long countAssets(final Query query, @Nullable final Iterable<Repository> repositories) {
     return countAssets(query.getWhere(), query.getParameters(), repositories, query.getQuerySuffix());
+  }
+
+  @Override
+  @Guarded(by = ACTIVE)
+  public long countGroupedAssets(@Nullable String whereClause,
+                                 @Nullable Map<String, Object> parameters,
+                                 @Nullable Iterable<Repository> repositories,
+                                 String querySuffix)
+  {
+    checkNotNull(querySuffix);
+    checkState(containsIgnoreCase(querySuffix, "group by"));
+    return assetEntityAdapter.countGroupByQuery(db, whereClause, parameters, bucketsOf(repositories), querySuffix);
+  }
+
+  @Override
+  @Guarded(by = ACTIVE)
+  public long countGroupedAssets(final Query query, @Nullable final Iterable<Repository> repositories) {
+    return countGroupedAssets(query.getWhere(), query.getParameters(), repositories, query.getQuerySuffix());
   }
 
   @Override
@@ -603,7 +658,7 @@ public class StorageTxImpl
   @Override
   @Guarded(by = ACTIVE)
   public AssetBlob createBlob(final String blobName,
-                              final Supplier<InputStream> streamSupplier,
+                              final InputStreamSupplier streamSupplier,
                               final Iterable<HashAlgorithm> hashAlgorithms,
                               @Nullable final Map<String, String> headers,
                               @Nullable final String declaredContentType,
@@ -619,12 +674,15 @@ public class StorageTxImpl
 
     Map<String, String> storageHeadersMap = buildStorageHeaders(blobName, streamSupplier, headers, declaredContentType,
         skipContentVerification);
-    return blobTx.create(
-        streamSupplier.get(),
-        storageHeadersMap,
-        hashAlgorithms,
-        storageHeadersMap.get(BlobStore.CONTENT_TYPE_HEADER)
+
+    try (InputStream in = streamSupplier.get()) {
+      return blobTx.create(
+          in,
+          storageHeadersMap,
+          hashAlgorithms,
+          storageHeadersMap.get(BlobStore.CONTENT_TYPE_HEADER)
     );
+    }
   }
 
   @Override
@@ -660,7 +718,7 @@ public class StorageTxImpl
                               final TempBlob originalBlob,
                               @Nullable final Map<String, String> headers,
                               @Nullable final String declaredContentType,
-                              boolean skipContentVerification)
+                              final boolean skipContentVerification)
       throws IOException
   {
     checkNotNull(blobName);
@@ -672,16 +730,29 @@ public class StorageTxImpl
 
     Map<String, String> storageHeadersMap = buildStorageHeaders(blobName, originalBlob, headers, declaredContentType,
         skipContentVerification);
-    return blobTx.createByCopying(
-        originalBlob.getBlob().getId(),
-        storageHeadersMap,
-        originalBlob.getHashes(),
-        originalBlob.getHashesVerified()
-    );
+    try {
+      return blobTx.createByCopying(
+          originalBlob.getBlobRef(nodeAccess.getId()),
+          storageHeadersMap,
+          originalBlob.getHashes(),
+          originalBlob.getHashesVerified()
+      );
+    }
+    catch (MissingBlobException e) {
+      log.info("Blob {} no longer in blob store, attempting to copy cross-blob store", originalBlob.getBlobRef(nodeAccess.getId()));
+      try (InputStream inputStream = originalBlob.get()) {
+        return blobTx.create(
+          inputStream,
+          storageHeadersMap,
+          originalBlob.getHashes().keySet(),
+          storageHeadersMap.get(BlobStore.CONTENT_TYPE_HEADER)
+        );
+      }
+    }
   }
 
   private Map<String, String> buildStorageHeaders(final String blobName,
-                                                  @Nullable final Supplier<InputStream> streamSupplier,
+                                                  @Nullable final InputStreamSupplier streamSupplier,
                                                   @Nullable final Map<String, String> headers,
                                                   @Nullable final String declaredContentType,
                                                   final boolean skipContentVerification) throws IOException
@@ -691,7 +762,7 @@ public class StorageTxImpl
         "skipContentVerification set true but no declaredContentType provided"
     );
     Builder<String, String> storageHeaders = ImmutableMap.builder();
-    storageHeaders.put(Bucket.REPO_NAME_HEADER, repositoryName);
+    storageHeaders.put(BlobStore.REPO_NAME_HEADER, repositoryName);
     storageHeaders.put(BlobStore.BLOB_NAME_HEADER, blobName);
     storageHeaders.put(BlobStore.CREATED_BY_HEADER, createdBy);
     storageHeaders.put(BlobStore.CREATED_BY_IP_HEADER, createdByIp);
@@ -753,6 +824,25 @@ public class StorageTxImpl
 
       assetBlob.setAttached(true);
     }
+
+    attachAssetMetadata(asset, assetBlob.getBlob().getId());
+  }
+
+  @Override
+  @Guarded(by = ACTIVE)
+  public void attachAssetMetadata(final Asset asset, final BlobId blobId) {
+    try {
+      NestedAttributesMap componentAttributes = null;
+      EntityId componentId = asset.componentId();
+      if (componentId != null) {
+        Component component = findComponent(componentId);
+        componentAttributes = component.attributes();
+      }
+      blobTx.attachAssetMetadata(blobId, componentAttributes, asset.attributes());
+    }
+    catch (Exception e) {
+      log.error("Failed to attach asset attributes to blob", e);
+    }
   }
 
   /**
@@ -793,6 +883,10 @@ public class StorageTxImpl
   {
     if (asset.blobRef() != null) {
       Blob oldBlob = blobTx.get(asset.blobRef());
+      if (asset.blobRef().equals(assetBlob.getBlobRef())) {
+        assetBlob.setDuplicate(oldBlob);
+        return true;
+      }
       if (oldBlob != null) {
         boolean checksumsMatch;
         if (assetBlob.getHashesVerified() && checksumExists(checksums, assetBlob)) {
@@ -812,14 +906,14 @@ public class StorageTxImpl
           }
 
           assetBlob.setDuplicate(oldBlob);
-          
+
           return true;
         }
       }
     }
     return false;
   }
-  
+
   /**
    * Deletes the existing blob for the asset if one exists, updating the blob updated field if necessary. The
    * write policy will be enforced for this operation and will throw an exception if updates are not supported.
@@ -846,7 +940,7 @@ public class StorageTxImpl
   @Guarded(by = ACTIVE)
   public AssetBlob setBlob(final Asset asset,
                            final String blobName,
-                           final Supplier<InputStream> streamSupplier,
+                           final InputStreamSupplier streamSupplier,
                            final Iterable<HashAlgorithm> hashAlgorithms,
                            @Nullable final Map<String, String> headers,
                            @Nullable final String declaredContentType,
@@ -910,8 +1004,8 @@ public class StorageTxImpl
                            final String blobName,
                            final TempBlob originalBlob,
                            @Nullable final Map<String, String> headers,
-                           @Nullable String declaredContentType,
-                           boolean skipContentVerification)
+                           @Nullable final String declaredContentType,
+                           final boolean skipContentVerification)
       throws IOException
   {
     checkNotNull(blobName);
@@ -932,8 +1026,12 @@ public class StorageTxImpl
   @Guarded(by = ACTIVE)
   public Blob getBlob(final BlobRef blobRef) {
     checkNotNull(blobRef);
-
-    return blobTx.get(blobRef);
+    Blob blob = blobTx.get(blobRef);
+    if (blob == null && repositoryMoveStoreProvider.get() != null) {
+      // this blob is outside the blobTx!!
+      blob = repositoryMoveStoreProvider.get().getIfBeingMoved(blobRef, repositoryName);
+    }
+    return blob;
   }
 
   @Override
@@ -947,7 +1045,7 @@ public class StorageTxImpl
   }
 
   @Nonnull
-  private String determineContentType(final Supplier<InputStream> inputStreamSupplier,
+  private String determineContentType(final InputStreamSupplier inputStreamSupplier,
                                       final String blobName,
                                       @Nullable final String declaredContentType)
       throws IOException

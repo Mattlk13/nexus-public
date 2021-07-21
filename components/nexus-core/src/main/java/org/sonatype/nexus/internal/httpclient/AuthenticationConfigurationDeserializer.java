@@ -24,6 +24,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
+import com.fasterxml.jackson.databind.jsontype.TypeDeserializer;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
@@ -50,11 +51,25 @@ public class AuthenticationConfigurationDeserializer
   public AuthenticationConfiguration deserialize(final JsonParser parser, final DeserializationContext context)
       throws IOException
   {
+    return deserialize(parser);
+  }
+
+  @Override
+  public AuthenticationConfiguration deserializeWithType(final JsonParser parser,
+                                                         final DeserializationContext context,
+                                                         final TypeDeserializer typeDeserializer)
+      throws IOException
+  {
+    return deserialize(parser);
+  }
+
+  private AuthenticationConfiguration deserialize(final JsonParser parser) throws IOException {
     JsonNode node = parser.readValueAsTree();
     String typeName = node.get("type").textValue();
     Class<? extends AuthenticationConfiguration> type = TYPES.get(typeName);
     checkState(type != null, "Unknown %s type: %s", AuthenticationConfiguration.class.getSimpleName(), typeName);
     AuthenticationConfiguration configuration = parser.getCodec().treeToValue(node, type);
+    configuration.setPreemptive(configuration.isPreemptive());
     if (UsernameAuthenticationConfiguration.class.equals(type)) {
       UsernameAuthenticationConfiguration upc = (UsernameAuthenticationConfiguration) configuration;
       upc.setUsername(upc.getUsername());
