@@ -20,20 +20,21 @@ import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.repository.search.query.SearchUtils;
+import org.sonatype.nexus.repository.Repository;
+import org.sonatype.nexus.repository.search.AssetSearchResult;
+import org.sonatype.nexus.repository.search.SearchUtils;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
 
 import static com.google.common.collect.ImmutableMap.of;
-import static java.util.Collections.emptyMap;
 import static java.util.Optional.empty;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.IsEqual.equalTo;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.rest.internal.resources.AssetMapUtils.getValueFromAssetMap;
 import static org.sonatype.nexus.repository.rest.internal.resources.ResourcesTestUtils.createAsset;
@@ -47,19 +48,24 @@ public class AssetMapUtilsTest
 
   private static final String ARTIFACT_ID_ATTRIBUTE_NAME = "assets.attributes.maven2.artifactId";
 
-  private Map<String, Object> assetMap;
+  private AssetSearchResult assetMap;
 
-  private Map<String, Object> assetMapWithClassifier;
+  private AssetSearchResult assetMapWithClassifier;
 
   private AssetMapUtils underTest;
+
+  @Mock
+  private Repository repository;
 
   @Mock
   private SearchUtils searchUtils;
 
   @Before
   public void setup() {
+    when(repository.getUrl()).thenReturn("http://localhost/repository/maven/");
     assetMap = createAsset("antlr.jar", "maven2", "first-sha1", of("extension", "jar"));
-    assetMapWithClassifier = createAsset("antlr.jar", "maven2", "first-sha1", of("extension", "jar", "classifier", "sources"));
+    assetMapWithClassifier =
+        createAsset("antlr.jar", "maven2", "first-sha1", of("extension", "jar", "classifier", "sources"));
     underTest = new AssetMapUtils(searchUtils);
   }
 
@@ -90,7 +96,7 @@ public class AssetMapUtilsTest
 
   @Test
   public void testGetValueFromAssetMap_EmptyMap() {
-    runGetValueFromAssetMapTest(emptyMap(), "assets.attributes.checksum.sha1", null);
+    runGetValueFromAssetMapTest(new AssetSearchResult(), "assets.attributes.checksum.sha1", null);
   }
 
   @Test
@@ -212,7 +218,7 @@ public class AssetMapUtilsTest
     return assetParams;
   }
 
-  private void runGetValueFromAssetMapTest(final Map<String, Object> assetMap, final String query, final String match) {
+  private void runGetValueFromAssetMapTest(final AssetSearchResult assetMap, final String query, final String match) {
     Optional<Object> value = getValueFromAssetMap(assetMap, query);
     if (match == null) {
       assertThat(value, equalTo(empty()));

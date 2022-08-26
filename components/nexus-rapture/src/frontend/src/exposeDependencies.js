@@ -16,9 +16,11 @@
  */
 import axios from 'axios';
 import * as nxrmUiPlugin from '@sonatype/nexus-ui-plugin';
+import * as rsc from '@sonatype/react-shared-components';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import * as xstate from 'xstate';
+import * as luxon from 'luxon';
 
 export default function exposeDependencies() {
   window.axios = axios;
@@ -26,4 +28,6 @@ export default function exposeDependencies() {
   window.ReactDOM = ReactDOM;
   window.xstate = xstate;
   window.nxrmUiPlugin = nxrmUiPlugin;
+  window.luxon = luxon;
+  window.rsc = rsc;
 }

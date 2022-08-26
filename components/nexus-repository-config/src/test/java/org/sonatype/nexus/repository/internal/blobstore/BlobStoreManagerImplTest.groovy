@@ -25,6 +25,7 @@ import org.sonatype.nexus.common.app.FreezeService
 import org.sonatype.nexus.common.event.EventManager
 import org.sonatype.nexus.common.node.NodeAccess
 import org.sonatype.nexus.common.stateguard.InvalidStateException
+import org.sonatype.nexus.repository.blobstore.BlobStoreConfigurationStore
 import org.sonatype.nexus.repository.manager.RepositoryManager
 import org.sonatype.nexus.repository.replication.ReplicationBlobStoreStatusManager
 
@@ -41,7 +42,7 @@ import static org.hamcrest.MatcherAssert.assertThat
 import static org.hamcrest.Matchers.notNullValue
 import static org.junit.Assert.fail
 import static org.mockito.ArgumentCaptor.forClass
-import static org.mockito.Matchers.any
+import static org.mockito.ArgumentMatchers.any
 import static org.mockito.Mockito.doReturn
 import static org.mockito.Mockito.doThrow
 import static org.mockito.Mockito.mock
@@ -101,8 +102,8 @@ class BlobStoreManagerImplTest
   private BlobStoreManagerImpl newBlobStoreManager(Boolean provisionDefaults = null) {
     spy(new BlobStoreManagerImpl(eventManager, store, [test: descriptor, File: descriptor],
         [test: provider, File: provider], freezeService, { -> repositoryManager } as Provider,
-         nodeAccess, provisionDefaults, changeRepositoryBlobstoreDataService, blobStoreOverrideProvider,
-         replicationBlobStoreStatusManager))
+         nodeAccess, provisionDefaults, new DefaultFileBlobStoreProvider(), changeRepositoryBlobstoreDataService,
+         blobStoreOverrideProvider, replicationBlobStoreStatusManager))
   }
 
   @Test
@@ -257,9 +258,9 @@ class BlobStoreManagerImplTest
     when(provider.get()).thenReturn(blobStore)
     BlobStoreConfiguration configuration = createConfig('test')
     underTest.create(configuration)
-    
+
     underTest.stop()
-    
+
     verify(blobStore).stop()
   }
 
@@ -285,6 +286,7 @@ class BlobStoreManagerImplTest
     // avoid newBlobStoreManager method because it returns a spy that throws NPE accessing the stores field
     underTest = new BlobStoreManagerImpl(eventManager, store, [test: descriptor, File: descriptor],
         [test: provider, File: provider], freezeService, { -> repositoryManager } as Provider, nodeAccess, true,
+         new DefaultFileBlobStoreProvider(),
          changeRepositoryBlobstoreDataService, blobStoreOverrideProvider, replicationBlobStoreStatusManager)
 
     BlobStore blobStore = mock(BlobStore)
@@ -322,7 +324,7 @@ class BlobStoreManagerImplTest
   }
 
   @Test
-  void 'It is promotable when the store finds no parents and the blob store is groupable'() {
+  void 'It is convertable when the store finds no parents and the blob store is groupable'() {
     def blobStoreName = 'child'
     def blobStore = mock(BlobStore)
     underTest.track(blobStoreName, blobStore)
@@ -330,31 +332,31 @@ class BlobStoreManagerImplTest
     when(blobStore.isWritable()).thenReturn(true)
     when(blobStore.getBlobStoreConfiguration()).thenReturn(new MockBlobStoreConfiguration(name: blobStoreName))
     when(store.findParent(blobStoreName)).thenReturn(Optional.empty())
-    assert underTest.isPromotable(blobStoreName)
+    assert underTest.isConvertable(blobStoreName)
   }
 
   @Test
-  void 'It is not promotable when the store finds parents'() {
+  void 'It is not convertable when the store finds parents'() {
     def blobStoreName = 'child'
     def blobStore = mock(BlobStore)
     when(blobStore.isGroupable()).thenReturn(true)
     when(blobStore.getBlobStoreConfiguration()).thenReturn(new MockBlobStoreConfiguration(name: blobStoreName))
     when(store.findParent(blobStoreName)).thenReturn(Optional.of(new MockBlobStoreConfiguration()))
-    assert !underTest.isPromotable(blobStoreName)
+    assert !underTest.isConvertable(blobStoreName)
   }
 
   @Test
-  void 'It is not promotable when the store is not groupable'() {
+  void 'It is not convertable when the store is not groupable'() {
     def blobStoreName = 'child'
     def blobStore = mock(BlobStore)
     when(blobStore.isGroupable()).thenReturn(false)
     when(blobStore.getBlobStoreConfiguration()).thenReturn(new MockBlobStoreConfiguration(name: blobStoreName))
     when(store.findParent(blobStoreName)).thenReturn(Optional.empty())
-    assert !underTest.isPromotable(blobStoreName)
+    assert !underTest.isConvertable(blobStoreName)
   }
 
   @Test
-  void 'It is not promotable when the store is in use by a task'() {
+  void 'It is not convertable when the store is in use by a task'() {
     def blobStoreName = 'child'
     def blobStore = mock(BlobStore)
     underTest.track(blobStoreName, blobStore)
@@ -363,7 +365,7 @@ class BlobStoreManagerImplTest
     when(blobStore.isWritable()).thenReturn(true)
     when(blobStore.getBlobStoreConfiguration()).thenReturn(new MockBlobStoreConfiguration(name: blobStoreName))
     when(store.findParent(blobStoreName)).thenReturn(Optional.empty())
-    assert !underTest.isPromotable(blobStoreName)
+    assert !underTest.isConvertable(blobStoreName)
 
   }
 
@@ -389,7 +391,7 @@ class BlobStoreManagerImplTest
     assert underTest.browse().toList() == [blobStore]
   }
 
-  private BlobStoreConfiguration createConfig(name = 'foo', type = 'test', attributes = [file:[path:'baz']]) {
+  private BlobStoreConfiguration createConfig(name = 'foo', type = 'test', attributes = [file: [path: 'baz']]) {
     def entity = new MockBlobStoreConfiguration(
         name: name,
         type: type,

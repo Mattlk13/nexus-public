@@ -10,13 +10,11 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-
 package org.sonatype.nexus.content.maven.store;
 
 import javax.inject.Named;
 
 import org.sonatype.nexus.repository.content.store.AssetBlobStore;
-import org.sonatype.nexus.repository.content.store.AssetStore;
 import org.sonatype.nexus.repository.content.store.BespokeFormatStoreModule;
 import org.sonatype.nexus.repository.content.store.ContentRepositoryStore;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
@@ -30,7 +28,7 @@ import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 public class Maven2StoreModule
     extends BespokeFormatStoreModule<ContentRepositoryStore<Maven2ContentRepositoryDAO>,
                                      Maven2ComponentStore, // adds support for the base_version column
-                                     AssetStore<Maven2AssetDAO>,
+                                     Maven2AssetStore,
                                      AssetBlobStore<Maven2AssetBlobDAO>>
 {
   // nothing to add...

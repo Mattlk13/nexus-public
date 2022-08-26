@@ -19,7 +19,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
-
 import javax.annotation.Nullable;
 
 import org.sonatype.goodies.lifecycle.Lifecycle;
@@ -153,7 +152,7 @@ public interface BlobStore
   /**
    * Makes a blob permanent by writing the specified permanent blob headers into the blob's properties file.
    *
-   * @since 3.35
+   * @since 3.37
    */
   default Blob makeBlobPermanent(final BlobId blobId, final Map<String, String> headers) {
     return copy(blobId, headers); // default to copy for non-cloud blob stores
@@ -203,10 +202,19 @@ public interface BlobStore
   BlobStoreMetrics getMetrics();
 
   /**
-   * Perform garbage collection, purging blobs marked for deletion or whatever other periodic, implementation-specific
-   * tasks need doing.
+   * A map of blob storage metrics by operation type which are filled by (@code BlobStoreAnalyticsInterceptor)
    */
-  void compact();
+  Map<OperationType, OperationMetrics> getOperationMetricsByType();
+
+  /**
+   * Map of operation metrics that to be updated with changes as they happen.
+   */
+  Map<OperationType, OperationMetrics> getOperationMetricsDelta();
+
+  /**
+   * Clears the operational metrics of the blobstore.
+   */
+  void clearOperationMetrics();
 
   /**
    * Perform garbage collection, purging blobs marked for deletion or whatever other periodic, implementation-specific
@@ -215,6 +223,11 @@ public interface BlobStore
    * @since 3.5
    */
   void compact(@Nullable BlobStoreUsageChecker inUseChecker);
+
+  /**
+   * Delete blob temporary files
+   */
+  void deleteTempFiles();
 
   /**
    * Returns the configuration entity for the BlobStore.
@@ -332,7 +345,7 @@ public interface BlobStore
    * Note: This method should only called with a BlobId known to have been created as a TempBlob, implementations may
    * perform no checks if they provide no special handling.
    *
-   * @since 3.35
+   * @since 3.37
    */
   default boolean deleteIfTemp(BlobId blobId) {
     return deleteHard(blobId);

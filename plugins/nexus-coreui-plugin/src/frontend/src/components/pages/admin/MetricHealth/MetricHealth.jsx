@@ -19,18 +19,21 @@ import {faCheckCircle, faExclamationCircle, faMedkit} from '@fortawesome/free-so
 
 import {
   ContentBody,
+  ListMachineUtils,
+  Page,
+  PageHeader,
+  PageTitle,
+  Section
+} from '@sonatype/nexus-ui-plugin';
+
+import {
   NxFontAwesomeIcon,
   NxTable,
   NxTableBody,
   NxTableCell,
   NxTableHead,
   NxTableRow,
-  Page,
-  PageHeader,
-  PageTitle,
-  Section,
-  Utils
-} from '@sonatype/nexus-ui-plugin';
+} from '@sonatype/react-shared-components';
 
 import MetricHealthMachine from './MetricHealthMachine';
 
@@ -42,9 +45,9 @@ export default function MetricHealth() {
   const data = current.context.data;
   const error = current.context.error;
 
-  const nameSortDir = Utils.getSortDirection('name', current.context);
-  const messageSortDir = Utils.getSortDirection('message', current.context);
-  const errorSortDir = Utils.getSortDirection('error', current.context);
+  const nameSortDir = ListMachineUtils.getSortDirection('name', current.context);
+  const messageSortDir = ListMachineUtils.getSortDirection('message', current.context);
+  const errorSortDir = ListMachineUtils.getSortDirection('error', current.context);
 
   return <Page>
     <PageHeader><PageTitle icon={faMedkit} {...UIStrings.METRIC_HEALTH.MENU}/></PageHeader>

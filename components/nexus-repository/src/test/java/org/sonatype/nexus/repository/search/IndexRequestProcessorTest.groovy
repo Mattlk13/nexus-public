@@ -22,7 +22,7 @@ import org.sonatype.nexus.common.event.EventManager
 import org.sonatype.nexus.common.stateguard.InvalidStateException
 import org.sonatype.nexus.repository.Repository
 import org.sonatype.nexus.repository.manager.RepositoryManager
-import org.sonatype.nexus.repository.search.index.SearchIndexService
+import org.sonatype.nexus.repository.search.index.ElasticSearchIndexService
 import org.sonatype.nexus.repository.storage.AssetCreatedEvent
 import org.sonatype.nexus.repository.storage.AssetDeletedEvent
 import org.sonatype.nexus.repository.storage.AssetUpdatedEvent
@@ -46,7 +46,7 @@ import static org.mockito.Mockito.doThrow
 import static org.mockito.Mockito.mock
 import static org.mockito.Mockito.verify
 import static org.mockito.Mockito.verifyNoMoreInteractions
-import static org.mockito.Mockito.verifyZeroInteractions
+import static org.mockito.Mockito.verifyNoInteractions
 import static org.mockito.Mockito.when
 import static org.sonatype.nexus.repository.FacetSupport.State.DELETED
 import static org.sonatype.nexus.repository.FacetSupport.State.DESTROYED
@@ -84,13 +84,13 @@ class IndexRequestProcessorTest
   EventManager eventManager
 
   @Mock
-  SearchIndexService searchIndexService
+  ElasticSearchIndexService searchIndexService
 
   @Mock
   Repository repository
 
   @Mock
-  SearchFacet searchFacet
+  ElasticSearchFacet searchFacet
 
   @Mock
   StorageFacet storageFacet
@@ -104,7 +104,7 @@ class IndexRequestProcessorTest
   public void setup() {
     indexRequestProcessor = new IndexRequestProcessor(repositoryManager, eventManager, searchIndexService, bulkProcessing)
     when(repositoryManager.get('testRepo')).thenReturn(repository)
-    when(repository.optionalFacet(SearchFacet)).thenReturn(Optional.of(searchFacet))
+    when(repository.optionalFacet(ElasticSearchFacet)).thenReturn(Optional.of(searchFacet))
     when(repository.facet(StorageFacet)).thenReturn(storageFacet)
     when(storageFacet.txSupplier()).thenReturn({ storageTx } as Supplier<StorageTx>)
   }
@@ -159,7 +159,7 @@ class IndexRequestProcessorTest
 
     indexRequestProcessor.on(new EntityBatchEvent([e1, e2, e3, e4, e5, e6, e7]))
 
-    verifyZeroInteractions(searchFacet)
+    verifyNoInteractions(searchFacet)
   }
 
   @Test

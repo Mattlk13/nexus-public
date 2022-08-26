@@ -16,12 +16,13 @@ import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
-
 import javax.annotation.Nullable;
 import javax.cache.Cache;
 import javax.cache.configuration.MutableConfiguration;
@@ -43,10 +44,13 @@ import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 import org.sonatype.nexus.blobstore.api.BlobStoreUsageChecker;
+import org.sonatype.nexus.blobstore.api.OperationMetrics;
+import org.sonatype.nexus.blobstore.api.OperationType;
 import org.sonatype.nexus.blobstore.api.RawObjectAccess;
 import org.sonatype.nexus.blobstore.api.UnimplementedRawObjectAccess;
 import org.sonatype.nexus.blobstore.group.internal.BlobStoreGroupMetrics;
 import org.sonatype.nexus.blobstore.group.internal.WriteToFirstMemberFillPolicy;
+import org.sonatype.nexus.blobstore.metrics.MonitoringBlobStoreMetrics;
 import org.sonatype.nexus.cache.CacheHelper;
 import org.sonatype.nexus.common.stateguard.Guarded;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
@@ -62,6 +66,8 @@ import static java.util.Collections.synchronizedList;
 import static java.util.Collections.unmodifiableList;
 import static java.util.function.Function.identity;
 import static java.util.stream.Collectors.toList;
+import static org.sonatype.nexus.blobstore.api.OperationType.DOWNLOAD;
+import static org.sonatype.nexus.blobstore.api.OperationType.UPLOAD;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.FAILED;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.NEW;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.SHUTDOWN;
@@ -133,7 +139,6 @@ public class BlobStoreGroup
           fillPolicyName, configuration.getName(), FALLBACK_FILL_POLICY_TYPE);
       this.fillPolicy = fillPolicyProviders.get(FALLBACK_FILL_POLICY_TYPE).get();
     }
-    fillPolicy.validateBlobStoreGroup(this);
   }
 
   @Override
@@ -175,18 +180,20 @@ public class BlobStoreGroup
 
   @Override
   @Guarded(by = STARTED)
+  @MonitoringBlobStoreMetrics(operationType = UPLOAD)
   public Blob create(final InputStream blobData, final Map<String, String> headers, @Nullable final BlobId blobId) {
     return create(headers, target -> target.create(blobData, headers, blobId));
   }
 
   @Override
   @Guarded(by = STARTED)
+  @MonitoringBlobStoreMetrics(operationType = UPLOAD)
   public Blob create(final Path sourceFile, final Map<String, String> headers, final long size, final HashCode sha1) {
     return create(headers, target -> target.create(sourceFile, headers, size, sha1));
   }
 
   private Blob create(final Map<String, String> headers, final CreateBlobFunction createBlobFunction) {
-    BlobStore result = fillPolicy.chooseBlobStoreForCreate(this, headers);
+    BlobStore result = fillPolicy.chooseBlobStore(this, headers);
     if (result == null) {
       throw new BlobStoreException("Unable to find a member Blob Store of '" + this + "' for create", null);
     }
@@ -198,38 +205,17 @@ public class BlobStoreGroup
   @Override
   @Guarded(by = STARTED)
   public Blob copy(final BlobId blobId, final Map<String, String> headers) {
-    BlobStore sourceBlobStore = locate(blobId)
+    BlobStore target = locate(blobId)
         .orElseThrow(() -> new BlobStoreException("Unable to find blob", blobId));
-
-    BlobStore destinationBlobStore = fillPolicy.chooseBlobStoreForCopy(this, sourceBlobStore, headers);
-
-    if (destinationBlobStore == null) {
-      throw new BlobStoreException("Unable to find a member Blob Store of '" + this + "' for copy", blobId);
-    }
-
-    Blob blob;
-    //if the source and destination blob stores are the same, perform the copy
-    if (sourceBlobStore.getBlobStoreConfiguration().getName()
-        .equals(destinationBlobStore.getBlobStoreConfiguration().getName())) {
-      blob = sourceBlobStore.copy(blobId, headers);
-    }
-    //if the source and destination blob stores are different, create it the blob in the destination store
-    else {
-      Blob blobToCopy = sourceBlobStore.get(blobId);
-      if (blobToCopy == null) {
-        log.error("Unable to copy blob because it doesn't exist in blob store: {}, blobId: {}", sourceBlobStore.getBlobStoreConfiguration().getName(), blobId);
-        throw new BlobStoreException("Unable to blob to copy", blobId);
-      }
-      blob = destinationBlobStore.create(blobToCopy.getInputStream(), headers, null);
-    }
-
-    locatedBlobs.put(blob.getId(), destinationBlobStore.getBlobStoreConfiguration().getName());
+    Blob blob = target.copy(blobId, headers);
+    locatedBlobs.put(blob.getId(), target.getBlobStoreConfiguration().getName());
     return blob;
   }
 
   @Nullable
   @Override
   @Guarded(by = STARTED)
+  @MonitoringBlobStoreMetrics(operationType = DOWNLOAD)
   public Blob get(final BlobId blobId) {
     return locate(blobId)
         .map((BlobStore target) -> target.get(blobId))
@@ -239,6 +225,7 @@ public class BlobStoreGroup
   @Nullable
   @Override
   @Guarded(by = STARTED)
+  @MonitoringBlobStoreMetrics(operationType = DOWNLOAD)
   public Blob get(final BlobId blobId, final boolean includeDeleted) {
     if (includeDeleted) {
       // check directly without using cache
@@ -300,15 +287,66 @@ public class BlobStoreGroup
   }
 
   @Override
-  @Guarded(by = STARTED)
-  public synchronized void compact() {
-    members.get().stream().forEach((BlobStore member) -> member.compact());
+  public Map<OperationType, OperationMetrics> getOperationMetricsByType() {
+    Map<OperationType, OperationMetrics> result = new EnumMap<>(OperationType.class);
+    Iterable<Map<OperationType, OperationMetrics>> metrics = members.get().stream()
+        .map(BlobStore::getOperationMetricsByType)
+        ::iterator;
+    for (Map<OperationType, OperationMetrics> metric : metrics) {
+      for (Entry<OperationType, OperationMetrics> metricsEntry : metric.entrySet()) {
+        OperationType type = metricsEntry.getKey();
+        OperationMetrics operationMetrics = metricsEntry.getValue();
+        OperationMetrics existingMetrics = result.get(type);
+        if (existingMetrics != null) {
+          OperationMetrics aggregatedMetrics = existingMetrics.add(operationMetrics);
+          result.put(type, aggregatedMetrics);
+        }
+        else {
+          result.put(type, operationMetrics);
+        }
+      }
+    }
+    return result;
+  }
+
+  @Override
+  public Map<OperationType, OperationMetrics> getOperationMetricsDelta() {
+    Map<OperationType, OperationMetrics> result = new EnumMap<>(OperationType.class);
+    Iterable<Map<OperationType, OperationMetrics>> metrics = members.get().stream()
+        .map(BlobStore::getOperationMetricsDelta)
+        ::iterator;
+    for (Map<OperationType, OperationMetrics> metric : metrics) {
+      for (Entry<OperationType, OperationMetrics> metricsEntry : metric.entrySet()) {
+        OperationType type = metricsEntry.getKey();
+        OperationMetrics operationMetrics = metricsEntry.getValue();
+        OperationMetrics existingMetrics = result.get(type);
+        if (existingMetrics != null) {
+          OperationMetrics aggregatedMetrics = existingMetrics.add(operationMetrics);
+          result.put(type, aggregatedMetrics);
+        }
+        else {
+          result.put(type, operationMetrics);
+        }
+      }
+    }
+    return result;
+  }
+
+  @Override
+  public void clearOperationMetrics() {
+    // noop invoke the method on the members
   }
 
   @Override
   @Guarded(by = STARTED)
   public synchronized void compact(@Nullable final BlobStoreUsageChecker inUseChecker) {
     members.get().stream().forEach((BlobStore member) -> member.compact(inUseChecker));
+  }
+
+  @Override
+  @Guarded(by = STARTED)
+  public synchronized void deleteTempFiles() {
+    members.get().forEach(BlobStore::deleteTempFiles);
   }
 
   @Override

@@ -14,7 +14,6 @@ package org.sonatype.nexus.repository.rest.api;
 
 import java.util.Collection;
 import java.util.Collections;
-
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -24,6 +23,7 @@ import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.config.ConfigurationConstants;
+import org.sonatype.nexus.repository.db.DatabaseCheck;
 import org.sonatype.nexus.repository.rest.api.model.AbstractApiRepository;
 import org.sonatype.nexus.repository.rest.api.model.CleanupPolicyAttributes;
 import org.sonatype.nexus.repository.rest.api.model.ComponentAttributes;
@@ -34,6 +34,7 @@ import org.sonatype.nexus.repository.rest.api.model.HttpClientConnectionAttribut
 import org.sonatype.nexus.repository.rest.api.model.HttpClientConnectionAuthenticationAttributes;
 import org.sonatype.nexus.repository.rest.api.model.NegativeCacheAttributes;
 import org.sonatype.nexus.repository.rest.api.model.ProxyAttributes;
+import org.sonatype.nexus.repository.rest.api.model.ReplicationAttributes;
 import org.sonatype.nexus.repository.rest.api.model.SimpleApiGroupRepository;
 import org.sonatype.nexus.repository.rest.api.model.SimpleApiHostedRepository;
 import org.sonatype.nexus.repository.rest.api.model.SimpleApiProxyRepository;
@@ -44,9 +45,11 @@ import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.repository.types.ProxyType;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.reflect.TypeToken;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Objects.requireNonNull;
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.COMPONENT;
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.GROUP_WRITE_MEMBER;
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.PROPRIETARY_COMPONENTS;
@@ -59,6 +62,18 @@ public class SimpleApiRepositoryAdapter
     implements ApiRepositoryAdapter
 {
   private final RoutingRuleStore routingRuleStore;
+
+  private DatabaseCheck databaseCheck;
+
+  @VisibleForTesting
+  @Inject
+  void setDatabaseCheck(DatabaseCheck databaseCheck) {
+    this.databaseCheck = databaseCheck;
+  }
+
+  @Inject
+  @Named("${nexus.replication.http.enabled:-false}")
+  private boolean replicationFeatureEnabled;
 
   @Inject
   public SimpleApiRepositoryAdapter(final RoutingRuleStore routingRuleStore) {
@@ -74,7 +89,8 @@ public class SimpleApiRepositoryAdapter
 
     switch (repository.getType().toString()) {
       case GroupType.NAME:
-        return new SimpleApiGroupRepository(name, format, url, online, getStorageAttributes(repository),
+        return new SimpleApiGroupRepository(name, format, url, online,
+            getStorageAttributes(repository),
             getGroupAttributes(repository));
       case HostedType.NAME:
         return new SimpleApiHostedRepository(
@@ -87,10 +103,14 @@ public class SimpleApiRepositoryAdapter
             getComponentAttributes(repository)
         );
       case ProxyType.NAME:
-        return new SimpleApiProxyRepository(name, format, url, online, getStorageAttributes(repository),
-            getCleanupPolicyAttributes(repository), getProxyAttributes(repository),
-            getNegativeCacheAttributes(repository), getHttpClientAttributes(repository),
-            getRoutingRuleName(repository));
+        return new SimpleApiProxyRepository(name, format, url, online,
+            getStorageAttributes(repository),
+            getCleanupPolicyAttributes(repository),
+            getProxyAttributes(repository),
+            getNegativeCacheAttributes(repository),
+            getHttpClientAttributes(repository),
+            getRoutingRuleName(repository),
+            getReplicationAttributes(repository));
       default:
         return null;
     }
@@ -207,6 +227,21 @@ public class SimpleApiRepositoryAdapter
     return new HttpClientAttributes(blocked, autoBlock, connection, authentication);
   }
 
+  protected ReplicationAttributes getReplicationAttributes(final Repository repository) {
+    boolean isPostgresql = (null == databaseCheck) ? false : databaseCheck.isPostgresql();
+
+    Configuration configuration = repository.getConfiguration();
+
+    NestedAttributesMap replication = configuration.attributes("replication");
+    if (!replicationFeatureEnabled || replication == null || !isPostgresql) {
+      return null;
+    }
+
+    Boolean preemptivePull = replication.get("preemptivePullEnabled", Boolean.class, Boolean.FALSE);
+    String assetPathRegex = replication.get("assetPathRegex", String.class);
+    return new ReplicationAttributes(preemptivePull, assetPathRegex);
+  }
+
   protected static String toString(final Object o, final Object defaultValue) {
     return (o == null ? defaultValue : o).toString();
   }
@@ -218,4 +253,5 @@ public class SimpleApiRepositoryAdapter
   protected static Integer toInt(final Number num, final Integer defaultValue) {
     return num == null ? defaultValue : num.intValue();
   }
+
 }

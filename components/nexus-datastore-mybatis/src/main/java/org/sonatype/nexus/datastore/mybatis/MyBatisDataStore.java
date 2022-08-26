@@ -108,6 +108,7 @@ import static java.util.Optional.empty;
 import static java.util.Optional.ofNullable;
 import static java.util.regex.Pattern.DOTALL;
 import static java.util.regex.Pattern.compile;
+import static org.apache.ibatis.session.TransactionIsolationLevel.SERIALIZABLE;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
 import static org.sonatype.nexus.common.text.Strings2.isBlank;
 import static org.sonatype.nexus.common.text.Strings2.lower;
@@ -159,6 +160,8 @@ public class MyBatisDataStore
 
   private final BeanLocator beanLocator;
 
+  private final ClassLoader uberClassLoader;
+
   private HikariDataSource dataSource;
 
   private Configuration mybatisConfig;
@@ -170,11 +173,13 @@ public class MyBatisDataStore
 
   @Inject
   public MyBatisDataStore(@Named("mybatis") final PbeCipher databaseCipher,
+                          @Named("nexus-uber") final ClassLoader classLoader,
                           final PasswordHelper passwordHelper,
                           final ApplicationDirectories directories,
                           final BeanLocator beanLocator)
   {
     checkState(databaseCipher instanceof MyBatisCipher);
+    this.uberClassLoader = checkNotNull(classLoader);
     this.databaseCipher = checkNotNull(databaseCipher);
     this.passwordHelper = checkNotNull(passwordHelper);
     this.directories = checkNotNull(directories);
@@ -194,6 +199,7 @@ public class MyBatisDataStore
       this.databaseCipher = new MyBatisCipher();
       MavenCipherImpl passwordCipher = new MavenCipherImpl(new CryptoHelperImpl());
       this.passwordHelper = new PasswordHelper(passwordCipher, LEGACY_PHRASE_SERVICE);
+      this.uberClassLoader = Thread.currentThread().getContextClassLoader();
     }
     catch (Exception e) {
       throw new IllegalStateException("Unexpected error during setup", e);
@@ -265,6 +271,12 @@ public class MyBatisDataStore
   @Override
   public MyBatisDataSession openSession() {
     return new MyBatisDataSession(new DataAccessSqlSession(mybatisConfig));
+  }
+
+  @Guarded(by = STARTED)
+  @Override
+  public MyBatisDataSession openSerializableTransactionSession() {
+    return new MyBatisDataSession(new DataAccessSqlSession(mybatisConfig, SERIALIZABLE));
   }
 
   @Guarded(by = STARTED)
@@ -507,15 +519,16 @@ public class MyBatisDataStore
    * Registers a simple {@link DataAccess} type with MyBatis.
    */
   private void registerSimpleMapper(final Class<? extends DataAccess> accessType) {
-
     // make sure any types expected by the access type are registered first
     Expects expects = accessType.getAnnotation(Expects.class);
     if (expects != null) {
       asList(expects.value()).forEach(this::register);
     }
 
-    // MyBatis will load the corresponding XML schema
-    mybatisConfig.addMapper(accessType);
+    try (TcclBlock tccl = TcclBlock.begin(uberClassLoader)) {
+      // MyBatis will load the corresponding XML schema
+      mybatisConfig.addMapper(accessType);
+    }
   }
 
   /**

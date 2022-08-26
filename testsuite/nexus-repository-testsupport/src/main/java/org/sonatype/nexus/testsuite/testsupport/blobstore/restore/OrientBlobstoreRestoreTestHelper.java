@@ -12,7 +12,15 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.blobstore.restore;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Iterator;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import javax.annotation.Nullable;
 import javax.annotation.Priority;
@@ -22,12 +30,16 @@ import javax.inject.Provider;
 import javax.inject.Singleton;
 
 import org.sonatype.nexus.blobstore.api.Blob;
+import org.sonatype.nexus.blobstore.api.BlobId;
+import org.sonatype.nexus.blobstore.api.BlobRef;
 import org.sonatype.nexus.blobstore.api.BlobStore;
+import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.orient.DatabaseInstance;
 import org.sonatype.nexus.orient.DatabaseInstanceNames;
 import org.sonatype.nexus.repository.Repository;
+import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.storage.Asset;
 import org.sonatype.nexus.repository.storage.AssetEntityAdapter;
 import org.sonatype.nexus.repository.storage.Component;
@@ -41,14 +53,17 @@ import org.sonatype.nexus.scheduling.TaskScheduler;
 import com.orientechnologies.orient.core.db.document.ODatabaseDocumentTx;
 import com.orientechnologies.orient.core.sql.OCommandSQL;
 
-import static org.awaitility.Awaitility.await;
 import static java.util.Collections.singletonList;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.awaitility.Awaitility.await;
 import static org.hamcrest.CoreMatchers.nullValue;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.either;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.core.IsNull.notNullValue;
 import static org.junit.Assert.assertEquals;
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.Assert.fail;
+import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.common.app.FeatureFlags.ORIENT_ENABLED;
 import static org.sonatype.nexus.repository.storage.ComponentEntityAdapter.P_GROUP;
 import static org.sonatype.nexus.repository.storage.ComponentEntityAdapter.P_VERSION;
@@ -76,6 +91,12 @@ public class OrientBlobstoreRestoreTestHelper
 
   @Inject
   private TaskScheduler taskScheduler;
+
+  @Inject
+  private RepositoryManager manager;
+
+  @Inject
+  private BlobStoreManager blobstoreManager;
 
   @Override
   public void simulateComponentAndAssetMetadataLoss() {
@@ -113,7 +134,7 @@ public class OrientBlobstoreRestoreTestHelper
   }
 
   @Override
-  public void runRestoreMetadataTask(boolean isDryRun) {
+  public void runRestoreMetadataTask(final boolean isDryRun) {
     runRestoreMetadataTaskWithTimeout(10, isDryRun);
   }
 
@@ -169,22 +190,6 @@ public class OrientBlobstoreRestoreTestHelper
     assertThat(asset, notNullValue());
   }
 
-  @Override
-  public void assertAssetMatchesBlob(final Repository repository, final String name) {
-    try (StorageTx tx = getStorageTx(repository)) {
-      tx.begin();
-      Asset asset = tx.findAssetWithProperty(AssetEntityAdapter.P_NAME, name, tx.findBucket(repository));
-      Blob blob = tx.requireBlob(asset.blobRef());
-
-      assertThat(repository.getName(), equalTo(blob.getHeaders().get(BlobStore.REPO_NAME_HEADER)));
-      assertThat(asset.name(), equalTo(blob.getHeaders().get(BlobStore.BLOB_NAME_HEADER)));
-      assertThat(asset.createdBy(), equalTo(blob.getHeaders().get(BlobStore.CREATED_BY_HEADER)));
-      assertThat(asset.createdByIp(), equalTo(blob.getHeaders().get(BlobStore.CREATED_BY_IP_HEADER)));
-      assertThat(asset.contentType(), equalTo(blob.getHeaders().get(BlobStore.CONTENT_TYPE_HEADER)));
-      assertThat(asset.attributes().child("checksum").get("sha1"), equalTo(blob.getMetrics().getSha1Hash()));
-      assertThat(asset.size(), equalTo(blob.getMetrics().getContentSize()));
-    }
-  }
 
   public void assertComponentWithGAVInRepository(final Repository repository,
                                                  final String group,
@@ -222,6 +227,7 @@ public class OrientBlobstoreRestoreTestHelper
     }
   }
 
+  @Override
   public void assertAssetAssociatedWithComponent(final Repository repository, final String name, final String path) {
     Component component = findComponent(repository, name);
     assertThat(component, notNullValue());
@@ -253,7 +259,8 @@ public class OrientBlobstoreRestoreTestHelper
         Blob blob = tx.requireBlob(asset.blobRef());
 
         assertThat(repository.getName(), equalTo(blob.getHeaders().get(BlobStore.REPO_NAME_HEADER)));
-        assertThat(asset.name(), equalTo(blob.getHeaders().get(BlobStore.BLOB_NAME_HEADER)));
+        assertThat(asset.name(), either(equalTo(blob.getHeaders().get(BlobStore.BLOB_NAME_HEADER)))
+            .or(equalTo(blob.getHeaders().get(BlobStore.BLOB_NAME_HEADER).substring(1))));
         assertThat(asset.createdBy(), equalTo(blob.getHeaders().get(BlobStore.CREATED_BY_HEADER)));
         assertThat(asset.createdByIp(), equalTo(blob.getHeaders().get(BlobStore.CREATED_BY_IP_HEADER)));
         assertThat(asset.contentType(), equalTo(blob.getHeaders().get(BlobStore.CONTENT_TYPE_HEADER)));
@@ -261,6 +268,34 @@ public class OrientBlobstoreRestoreTestHelper
         assertThat(asset.size(), equalTo(blob.getMetrics().getContentSize()));
       }
     }
+  }
+
+  @Override
+  public void rewriteBlobNames() {
+    manager.browse().forEach(repo -> {
+      try (StorageTx tx = repo.facet(StorageFacet.class).txSupplier().get()) {
+        tx.begin();
+        StreamSupport.stream(tx.browseAssets(tx.findBucket(repo)).spliterator(), false)
+            .map(Asset::blobRef)
+            .map(blobRef -> blobstoreManager.get(blobRef.getStore()).getBlobAttributes(blobRef.getBlobId()))
+            .forEach(blobAttr -> {
+              Map<String, String> headers = blobAttr.getHeaders();
+              String name = headers.get(BLOB_NAME_HEADER);
+              if (name != null && !name.startsWith("/")) {
+                headers.put(BLOB_NAME_HEADER, '/' + name);
+                try {
+                  blobAttr.store();
+                }
+                catch (IOException e) {
+                  throw new UncheckedIOException("Failed to rewrite blob: " + name, e);
+                }
+              }
+              else {
+                fail("Found missing name or unexpected name: " + name);
+              }
+            });
+      }
+    });
   }
 
   private void executeSqlStatements(final String... sqlStatements) {
@@ -304,5 +339,22 @@ public class OrientBlobstoreRestoreTestHelper
 
   private static Query getQuery(final String group, final String name, final String version) {
     return Query.builder().where(P_GROUP).eq(group).and(P_NAME).eq(name).and(P_VERSION).eq(version).build();
+  }
+
+  @Override
+  public Map<String, BlobId> getAssetToBlobIds(final Repository repo, final Predicate<String> pathFilter) {
+    try (StorageTx tx = repo.facet(StorageFacet.class).txSupplier().get()) {
+      tx.begin();
+      return StreamSupport.stream(tx.browseAssets(tx.findBucket(repo)).spliterator(), false)
+          .filter(asset -> Objects.nonNull(asset.blobRef()))
+          .filter(asset -> pathFilter.test(asset.name()))
+          .collect(Collectors.toMap(Asset::name, OrientBlobstoreRestoreTestHelper::toBlobId));
+    }
+  }
+
+  private static BlobId toBlobId(final Asset asset) {
+    return Optional.ofNullable(asset.blobRef())
+        .map(BlobRef::getBlobId)
+        .orElse(null);
   }
 }

@@ -16,6 +16,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Arrays;
 import java.util.Optional;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -97,6 +98,40 @@ public class UpgradeManagerTest
 
         // check for the result of the upgrade step
         try (ResultSet results = stmt.executeQuery("SELECT * FROM example")) {
+          assertThat(results.next(), equalTo(true));
+          assertThat(results.getString("name"), equalTo("fawkes"));
+          assertThat(results.next(), equalTo(false));
+        }
+      }
+    }
+  }
+
+  @Test(expected = IllegalStateException.class)
+  public void testWithDatastoreFromFuture() {
+    FutureMigrationStep futureMigrationStep = new FutureMigrationStep();
+
+    UpgradeManager upgradeManagerWithFutureMigration = new UpgradeManager(dataStoreManager,
+        Arrays.asList(migrationStep, futureMigrationStep));
+    upgradeManagerWithFutureMigration.migrate();
+
+    UpgradeManager upgradeManagerWithoutFuture = new UpgradeManager(dataStoreManager, singletonList(migrationStep));
+    upgradeManagerWithoutFuture.migrate();
+  }
+
+  @Test
+  public void testUpgradeSkippedStep() throws SQLException {
+    FutureMigrationStep futureMigrationStep = new FutureMigrationStep();
+    UpgradeManager upgradeManager = new UpgradeManager(dataStoreManager, Arrays.asList(migrationStep, futureMigrationStep));
+    upgradeManager.migrate();
+
+    SkippedMigrationStep skippedMigrationStep = new SkippedMigrationStep();
+    UpgradeManager upgradeManagerWithSkipped = new UpgradeManager(dataStoreManager, Arrays.asList(migrationStep, futureMigrationStep, skippedMigrationStep));
+    upgradeManagerWithSkipped.migrate();
+
+    try (Connection conn = getConnection()) {
+      try (Statement stmt = conn.createStatement()) {
+        // check for the result of the upgrade step
+        try (ResultSet results = stmt.executeQuery("SELECT * FROM skipped")) {
           assertThat(results.next(), equalTo(true));
           assertThat(results.getString("name"), equalTo("fawkes"));
           assertThat(results.next(), equalTo(false));

@@ -22,7 +22,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
 
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -40,7 +40,7 @@ public class OrientBrowseNodeEventHandlerTest
 
   @Before
   public void setup() {
-    handler = new OrientBrowseNodeEventHandler(browseNodeManager, false);
+    handler = new OrientBrowseNodeEventHandler(browseNodeManager);
   }
 
   @Test
@@ -66,8 +66,8 @@ public class OrientBrowseNodeEventHandlerTest
     when(event.getRepositoryName()).thenReturn(REPOSITORY_NAME);
     when(event.isLocal()).thenReturn(true);
 
-    handler = new OrientBrowseNodeEventHandler(browseNodeManager, true);
-    handler.maybePauseEventProcessing();
+    handler = new OrientBrowseNodeEventHandler(browseNodeManager);
+    handler.pauseEventProcessing();
     handler.on(event);
 
     verify(browseNodeManager, never()).createFromAsset(any(), any());
@@ -104,8 +104,8 @@ public class OrientBrowseNodeEventHandlerTest
     when(event.getAsset()).thenReturn(asset);
     when(event.isLocal()).thenReturn(true);
 
-    handler = new OrientBrowseNodeEventHandler(browseNodeManager, true);
-    handler.maybePauseEventProcessing();
+    handler = new OrientBrowseNodeEventHandler(browseNodeManager);
+    handler.pauseEventProcessing();
     handler.on(event);
 
     verify(browseNodeManager, never()).createFromAsset(any(), any());
@@ -138,8 +138,8 @@ public class OrientBrowseNodeEventHandlerTest
     when(event.isLocal()).thenReturn(true);
     when(event.getRepositoryName()).thenReturn(REPOSITORY_NAME);
 
-    handler = new OrientBrowseNodeEventHandler(browseNodeManager, true);
-    handler.maybePauseEventProcessing();
+    handler = new OrientBrowseNodeEventHandler(browseNodeManager);
+    handler.pauseEventProcessing();
     handler.on(event);
 
     verify(browseNodeManager, never()).createFromAsset(any(), any());

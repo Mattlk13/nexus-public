@@ -39,6 +39,9 @@ import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
+import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
+import static org.sonatype.nexus.blobstore.file.FileBlobStore.METADATA_FILENAME;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA1;
 import static org.sonatype.nexus.repository.storage.AssetBlob.USE_HARD_DELETE;
 
@@ -134,7 +137,7 @@ public class BlobTx
   public void attachAssetMetadata(final BlobId blobId,
                                   final NestedAttributesMap componentAttributes,
                                   final NestedAttributesMap assetAttributes) {
-    blobMetadataStorage.attach(blobStore, blobId, componentAttributes, assetAttributes);
+    blobMetadataStorage.attach(blobStore, blobId, componentAttributes, assetAttributes, null);
   }
 
   private PrefetchedAssetBlob createPrefetchedAssetBlob(final Blob blob,
@@ -183,7 +186,9 @@ public class BlobTx
   public void commit() {
     for (Entry<BlobRef, String> deletionRequestEntry : deletionRequests.entrySet()) {
       try {
-        blobStore.delete(deletionRequestEntry.getKey().getBlobId(), deletionRequestEntry.getValue());
+        final BlobId blobId = deletionRequestEntry.getKey().getBlobId();
+        logGAMetadataBlobDetailsIfDebug(blobStore.get(blobId), deletionRequestEntry.getValue());
+        blobStore.delete(blobId, deletionRequestEntry.getValue());
       }
       catch (Throwable t) {
         log.warn("Unable to delete old blob {} while committing transaction", deletionRequestEntry.getKey(), t);
@@ -192,6 +197,7 @@ public class BlobTx
     for (AssetBlob assetBlob : newlyCreatedBlobs) {
       try {
         if (!assetBlob.isAttached()) {
+          logGAMetadataBlobDetailsIfDebug(assetBlob, "Removing unattached asset.");
           assetBlob.delete("Removing unattached asset");
         }
       }
@@ -202,7 +208,7 @@ public class BlobTx
     clearState();
   }
 
-  public void rollback() {
+  public void end() {
     //
     // No need to undelete deletionRequests here, because rollback is only triggered if the DB commit fails.
     // At that point we haven't done any deletions (just queued up requests) so there's nothing to undelete.
@@ -217,7 +223,10 @@ public class BlobTx
     //
     for (AssetBlob assetBlob : newlyCreatedBlobs) {
       try {
-        assetBlob.delete("Rolling back new asset", USE_HARD_DELETE);
+        if (!assetBlob.isAttached()) {
+          logGAMetadataBlobDetailsIfDebug(assetBlob, "Rolling back new asset.");
+          assetBlob.delete("Rolling back new asset", USE_HARD_DELETE);
+        }
       }
       catch (Throwable t) {
         log.warn("Unable to delete new blob {} while rolling back transaction", assetBlob.getBlobRef(), t);
@@ -226,8 +235,45 @@ public class BlobTx
     clearState();
   }
 
+  public void rollback() {
+    //
+    // No need to undelete deletionRequests here, because rollback is only triggered if the DB commit fails.
+    // At that point we haven't done any deletions (just queued up requests) so there's nothing to undelete.
+    //
+    // With the behaviour of makePermanent in some BlobStores (e.g. S3) which re-use the existing Blob, in the event
+    // of a rollback we only want to mark created blobs as unattached so they aren't permanently deleted before
+    // retries occur.
+    //
+    for (AssetBlob assetBlob : newlyCreatedBlobs) {
+      assetBlob.setAttached(false);
+      logGAMetadataBlobDetailsIfDebug(assetBlob, "Unattached blob from asset.");
+    }
+  }
+
   private void clearState() {
     newlyCreatedBlobs.clear();
     deletionRequests.clear();
+  }
+
+  private void logGAMetadataBlobDetailsIfDebug(final AssetBlob assetBlob, final String message) {
+    if (log.isDebugEnabled()) {
+      final Blob blob = assetBlob.getBlob();
+      final Map<String, String> headers = blob.getHeaders();
+      final String blobName = headers.getOrDefault(BLOB_NAME_HEADER, "");
+      final String repositoryName = headers.getOrDefault(REPO_NAME_HEADER, "");
+      if (blobName.endsWith(METADATA_FILENAME) && !blobName.endsWith("-SNAPSHOT/maven-metadata.xml")) {
+        log.debug("{} blob id {}, blob name {} repository {}.", message, blob.getId(), blobName, repositoryName);
+      }
+    }
+  }
+
+  private void logGAMetadataBlobDetailsIfDebug(final Blob blob, final String message) {
+    if (log.isDebugEnabled()) {
+      final Map<String, String> headers = blob.getHeaders();
+      final String blobName = headers.getOrDefault(BLOB_NAME_HEADER, "");
+      if (blobName.endsWith(METADATA_FILENAME) && !blobName.endsWith("-SNAPSHOT/maven-metadata.xml")) {
+        log.debug("Deleting blob - {} blob id {}, blob name {}.", message, blob.getId(), blobName);
+      }
+    }
   }
 }

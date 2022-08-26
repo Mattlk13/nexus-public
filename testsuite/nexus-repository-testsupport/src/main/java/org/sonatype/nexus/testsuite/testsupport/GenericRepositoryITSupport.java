@@ -26,7 +26,7 @@ import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
-import org.sonatype.nexus.repository.search.index.SearchIndexService;
+import org.sonatype.nexus.repository.search.index.ElasticSearchIndexService;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.authc.apikey.ApiKeyStore;
 import org.sonatype.nexus.security.authz.AuthorizationManager;
@@ -69,7 +69,10 @@ import static org.sonatype.nexus.testsuite.testsupport.FormatClientSupport.statu
 
 /**
  * Support class for repository format ITs.
+ *
+ * @deprecated Please write new tests as part of the {@link ITSupport} hierarchy
  */
+@Deprecated
 public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
     extends NexusITSupport
 {
@@ -101,7 +104,7 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
   protected BlobStoreManager blobStoreManager;
 
   @Inject
-  protected SearchIndexService searchIndexService;
+  protected ElasticSearchIndexService elasticSearchIndexService;
 
   protected BlobStoreRule blobstoreRule = new BlobStoreRule(() -> blobStoreManager);
 
@@ -247,8 +250,8 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
                                              final int metadataMaxAge) throws Exception
   {
     Configuration configuration = proxyRepository.getConfiguration().copy();
-    configuration.attributes("proxy").set("contentMaxAge", Integer.toString(contentMaxAge));
-    configuration.attributes("proxy").set("metadataMaxAge", Integer.toString(metadataMaxAge));
+    configuration.attributes("proxy").set("contentMaxAge", contentMaxAge);
+    configuration.attributes("proxy").set("metadataMaxAge", metadataMaxAge);
     repositoryManager.update(configuration);
   }
 

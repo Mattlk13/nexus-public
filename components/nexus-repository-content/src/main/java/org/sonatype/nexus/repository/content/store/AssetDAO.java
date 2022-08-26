@@ -29,6 +29,7 @@ import org.sonatype.nexus.datastore.api.Expects;
 import org.sonatype.nexus.datastore.api.SchemaTemplate;
 import org.sonatype.nexus.repository.content.Asset;
 import org.sonatype.nexus.repository.content.AssetBlob;
+import org.sonatype.nexus.repository.content.AssetInfo;
 import org.sonatype.nexus.repository.content.Component;
 
 import org.apache.ibatis.annotations.Param;
@@ -80,6 +81,21 @@ public interface AssetDAO
                                    @Nullable @Param(FILTER_PARAMS) Map<String, Object> filterParams);
 
   /**
+   * Browse all assets with corresponding components and blobs in the given repository in a paged fashion.
+   * The returned assets will be sorted by asset id in ascending order. Blob and the Component are eagerly populated.
+   *
+   * @param repositoryId      the repository to browse
+   * @param continuationToken optional token to continue from a previous request
+   * @param limit             maximum number of assets to return
+   * @return collection of assets and the next continuation token
+   * @see Continuation#nextContinuationToken()
+   */
+  Continuation<Asset> browseEagerAssetsInRepository(
+      @Param("repositoryId") int repositoryId,
+      @Nullable @Param("continuationToken") String continuationToken,
+      @Param("limit") int limit);
+
+  /**
    * Browse all assets in the given repositories in a paged fashion. The returned assets will be sorted
    * by asset id in ascending order.
    *
@@ -108,6 +124,38 @@ public interface AssetDAO
    * @return collection of assets
    */
   Collection<Asset> browseComponentAssets(Component component);
+
+  /**
+   * Finds assets where lastUpdated is greater than or equal to the given value.
+   *
+   * @param repositoryId the repository to browse
+   * @param blobCreated date that asset content must have been updated after
+   * @param regexExpressions list of SQL regex expressions that match on the path column
+   * @param limit maximum number of assets to return
+   * @return collection of assets
+   */
+  List<AssetInfo> findGreaterThanOrEqualToBlobCreated(
+      @Param("repositoryId") int repositoryId,
+      @Nullable @Param("blobCreated") OffsetDateTime blobCreated,
+      @Param("regexExpressions") List<String> regexExpressions,
+      @Param("limit") int limit);
+
+  /**
+   * Finds all assets where lastUpdated equals the given value.
+   *
+   * @param repositoryId the repository to browse
+   * @param startBlobCreated blobCreated on asset content is greater than or equal to this value
+   * @param endBlobCreated blobCreated on asset content is less than this value
+   * @param regexExpressions list of SQL regex expressions that match on path column
+   * @param limit maximum number of assets to return
+   * @return collection of assets
+   */
+  List<AssetInfo> findBlobCreatedWithinRange(
+      @Param("repositoryId") int repositoryId,
+      @Param("startBlobCreated") OffsetDateTime startBlobCreated,
+      @Param("endBlobCreated") OffsetDateTime endBlobCreated,
+      @Param("regexExpressions") List<String> regexExpressions,
+      @Param("limit") int limit);
 
   /**
    * Creates the given asset in the content data store.
@@ -151,6 +199,14 @@ public interface AssetDAO
    * @return asset if it was found
    */
   Optional<Asset> findByBlobRef(@Param("repositoryId") int repositoryId, @Param("blobRef") BlobRef blobRef);
+
+  /**
+   * Find assets by their component ids.
+   *
+   * @param componentIds a set of component ids.
+   * @return collection of {@link AssetInfo}
+   */
+  Collection<AssetInfo> findByComponentIds(@Param("componentIds") Set<Integer> componentIds);
 
   /**
    * Updates the kind of the given asset in the content data store.

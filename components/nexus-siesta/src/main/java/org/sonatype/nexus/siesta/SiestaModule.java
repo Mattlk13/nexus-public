@@ -14,6 +14,7 @@ package org.sonatype.nexus.siesta;
 
 import javax.inject.Named;
 
+import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.security.FilterChainModule;
 import org.sonatype.nexus.security.SecurityFilter;
 import org.sonatype.nexus.security.anonymous.AnonymousFilter;
@@ -22,9 +23,12 @@ import org.sonatype.nexus.security.authc.NexusAuthenticationFilter;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.AbstractModule;
+import com.google.inject.Module;
 import com.google.inject.servlet.ServletModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.sonatype.nexus.common.app.FeatureFlags.SESSION_ENABLED;
 
 /**
  * Siesta plugin module.
@@ -32,6 +36,7 @@ import org.slf4j.LoggerFactory;
  * @since 2.4
  */
 @Named
+@FeatureFlag(name = SESSION_ENABLED)
 public class SiestaModule
     extends AbstractModule
 {
@@ -52,7 +57,13 @@ public class SiestaModule
   private void doConfigure() {
     install(new ResteasyModule());
 
-    install(new ServletModule()
+    install(configureServletModule());
+
+    install(configureFilterChainModule());
+  }
+
+  protected ServletModule configureServletModule() {
+    return new ServletModule()
     {
       @Override
       protected void configureServlets() {
@@ -64,9 +75,11 @@ public class SiestaModule
         ));
         filter(MOUNT_POINT + "/*").through(SecurityFilter.class);
       }
-    });
+    };
+  }
 
-    install(new FilterChainModule()
+  protected Module configureFilterChainModule() {
+    return new FilterChainModule()
     {
       @Override
       protected void configure() {
@@ -75,6 +88,6 @@ public class SiestaModule
             AnonymousFilter.NAME,
             AntiCsrfFilter.NAME);
       }
-    });
+    };
   }
 }

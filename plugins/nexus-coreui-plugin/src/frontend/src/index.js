@@ -15,10 +15,16 @@
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
 import ContentSelectors from './components/pages/admin/ContentSelectors/ContentSelectors';
+import EmailServer from './components/pages/admin/EmailServer/EmailServer';
+import Privileges from './components/pages/admin/Privileges/Privileges';
+import Roles from './components/pages/admin/Roles/Roles';
+import Users from './components/pages/admin/Users/Users';
+import SslCertificates from './components/pages/admin/SslCertificates/SslCertificates';
 import AnonymousSettings from './components/pages/admin/AnonymousSettings/AnonymousSettings';
 import BlobStores from './components/pages/admin/BlobStores/BlobStores';
+import InsightFrontend from './components/pages/admin/InsightFrontend/InsightFrontend';
 import LoggingConfiguration from './components/pages/admin/LoggingConfiguration/LoggingConfiguration';
-import LogViewer from './components/pages/admin/LogViewer/LogViewer';
+import Logs from "./components/pages/admin/Logs/Logs";
 import Repositories from './components/pages/admin/Repositories/Repositories';
 import RoutingRules from './components/pages/admin/RoutingRules/RoutingRules';
 import SystemInformation from './components/pages/admin/SystemInformation/SystemInformation';
@@ -35,6 +41,12 @@ import S3BlobStoreWarning from './components/pages/admin/BlobStores/S3/S3BlobSto
 import S3BlobStoreActions from './components/pages/admin/BlobStores/S3/S3BlobStoreActions';
 import AzureBlobStoreSettings from './components/pages/admin/BlobStores/Azure/AzureBlobStoreSettings';
 import AzureBlobStoreActions from './components/pages/admin/BlobStores/Azure/AzureBlobStoreActions';
+import IqServer from './components/pages/admin/IqServer/IqServer';
+import Bundles from './components/pages/admin/Bundles/Bundles';
+import ProprietaryRepositories from './components/pages/admin/ProprietaryRepositories/ProprietaryRepositories';
+import Api from './components/pages/admin/Api/Api';
+import Realms from './components/pages/admin/Realms/Realms';
+import HTTP from './components/pages/admin/Http/Http';
 
 window.ReactComponents = {
   ...window.ReactComponents,
@@ -63,7 +75,7 @@ window.plugins.push({
       path: '/Repository/Blobstores',
       ...UIStrings.BLOB_STORES.MENU,
       view: BlobStores,
-      iconCls: 'x-fa fa-server',
+      iconCls: 'x-fa fa-hdd',
       visibility: {
         permissions: ['nexus:blobstores:read']
       }
@@ -74,10 +86,11 @@ window.plugins.push({
       ...UIStrings.REPOSITORIES.MENU,
       view: Repositories,
       iconCls: 'x-fa fa-database',
+      weight: 10,
       visibility: {
         featureFlags: [{key: 'nexus.react.repositories', defaultValue: false}],
         permissions: ['nexus:repository-admin:*:*:read']
-      }
+      },
     },
     {
       mode: 'admin',
@@ -85,10 +98,11 @@ window.plugins.push({
       ...UIStrings.CONTENT_SELECTORS.MENU,
       view: ContentSelectors,
       iconCls: 'x-fa fa-layer-group',
+      weight: 300,
       visibility: {
         bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
         permissions: ['nexus:selectors:read']
-      }
+      },
     },
     {
       mode: 'admin',
@@ -96,10 +110,73 @@ window.plugins.push({
       path: '/Repository/RoutingRules',
       view: RoutingRules,
       iconCls: 'x-fa fa-map-signs',
+      weight: 500,
       visibility: {
         bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
         permissions: ['nexus:*']
+      },
+    },
+    {
+      mode: 'admin',
+      path: '/Security/Privileges-New',
+      ...UIStrings.PRIVILEGES.MENU,
+      view: Privileges,
+      iconCls: 'x-fa fa-id-badge',
+      weight: 10,
+      visibility: {
+        bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
+        featureFlags: [{key: 'nexus.react.privileges', defaultValue: false}],
+        permissions: ['nexus:privileges:read']
+      },
+    },
+    {
+      mode: 'admin',
+      path: '/System/EmailServer-New',
+      ...UIStrings.EMAIL_SERVER.MENU,
+      view: EmailServer,
+      iconCls: 'x-fa fa-envelope',
+      visibility: {
+        bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
+        featureFlags: [{key: 'nexus.react.emailServer', defaultValue: false}],
+        permissions: ['nexus:settings:read']
+      },
+    },
+    {
+      mode: 'admin',
+      path: '/Security/Roles',
+      ...UIStrings.ROLES.MENU,
+      view: Roles,
+      iconCls: 'x-fa fa-user-tag',
+      weight: 20,
+      visibility: {
+        bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
+        permissions: ['nexus:roles:read', 'nexus:privileges:read']
       }
+    },
+    {
+      mode: 'admin',
+      path: '/Security/SslCertificates-New',
+      ...UIStrings.SSL_CERTIFICATES.MENU,
+      view: SslCertificates,
+      iconCls: 'x-fa fa-id-badge',
+      visibility: {
+        bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
+        featureFlags: [{key: 'nexus.react.sslCertificates', defaultValue: false}],
+        permissions: ['nexus:ssl-truststore:read']
+      }
+    },
+    {
+      mode: 'admin',
+      path: '/Security/Users-New',
+      ...UIStrings.USERS.MENU,
+      view: Users,
+      iconCls: 'x-fa fa-users',
+      weight: 30,
+      visibility: {
+        bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
+        featureFlags: [{key: 'nexus.react.users', defaultValue: false}],
+        permissions: ['nexus:users:read', 'nexus:roles:read'],
+      },
     },
     {
       mode: 'admin',
@@ -107,6 +184,17 @@ window.plugins.push({
       ...UIStrings.ANONYMOUS_SETTINGS.MENU,
       view: AnonymousSettings,
       iconCls: 'x-fa fa-user',
+      visibility: {
+        bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
+        permissions: ['nexus:settings:read']
+      }
+    },
+    {
+      mode: 'admin',
+      path: '/Security/realms',
+      ...UIStrings.REALMS.MENU,
+      view: Realms,
+      iconCls: 'x-fa fa-dungeon',
       visibility: {
         bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
         permissions: ['nexus:settings:read']
@@ -140,7 +228,7 @@ window.plugins.push({
       path: '/Support/SystemInformation',
       ...UIStrings.SYSTEM_INFORMATION.MENU,
       view: SystemInformation,
-      iconCls: 'x-fa fa-globe',
+      iconCls: 'x-fa fa-info',
       visibility: {
         bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
         permissions: ['nexus:atlas:read']
@@ -192,13 +280,17 @@ window.plugins.push({
     },
     {
       mode: 'admin',
-      path: '/Support/Logging/LogViewer',
-      ...UIStrings.LOG_VIEWER.MENU,
-      view: LogViewer,
+      path: '/Support/Logs',
+      ...UIStrings.LOGS.MENU,
+      view: Logs,
       iconCls: 'x-fa fa-terminal',
       visibility: {
         bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
-        permissions: ['nexus:logging:read']
+        permissions: ['nexus:logging:read'],
+        featureFlags: [{
+          key: 'log.viewer.enabled',
+          defaultValue: false
+        }],
       }
     },
     {
@@ -207,10 +299,81 @@ window.plugins.push({
       ...UIStrings.CLEANUP_POLICIES.MENU,
       view: CleanupPolicies,
       iconCls: 'x-fa fa-broom',
+      weight: 400,
       visibility: {
         bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
         permissions: ['nexus:*']
+      },
+    },
+    {
+      mode: 'admin',
+      path: '/IQ',
+      ...UIStrings.IQ_SERVER.MENU,
+      view: IqServer,
+      iconCls: 'x-fa fa-shield-alt',
+      visibility: {
+        permissions: ['nexus:settings:read']
       }
-    }
+    },
+    {
+      mode: 'admin',
+      path: '/Repository/Proprietary',
+      ...UIStrings.PROPRIETARY_REPOSITORIES.MENU,
+      view: ProprietaryRepositories,
+      iconCls: 'x-fa fa-door-closed',
+      visibility: {
+        permissions: ['nexus:settings:read']
+      }
+    },
+    {
+      mode: 'admin',
+      path: '/Repository/InsightFrontend',
+      text: 'Log4j Visualizer',
+      description: 'Log4j Visualizer',
+      view: InsightFrontend,
+      iconCls: 'x-fa fa-binoculars',
+      visibility: {
+        requiresUser: true,
+        statesEnabled: [
+          {
+            key: 'vulnerabilityCapabilityState',
+            defaultValue: {enabled: false}
+          }
+        ],
+        permissions: ['nexus:*']
+      }
+    },
+    {
+      mode: 'admin',
+      path: '/System/Bundles',
+      ...UIStrings.BUNDLES.MENU,
+      view: Bundles,
+      iconCls: 'x-fa fa-puzzle-piece',
+      visibility: {
+        bundle: 'org.sonatype.nexus.plugins.nexus-coreui-plugin',
+        permissions: ['nexus:bundles:read']
+      }
+    },
+    {
+      mode: 'admin',
+      path: '/System/API',
+      ...UIStrings.API.MENU,
+      view: Api,
+      iconCls: 'x-fa fa-plug',
+      visibility: {
+        permissions: ['nexus:settings:read']
+      }
+    },
+    {
+      mode: 'admin',
+      path: '/System/HTTP-new',
+      ...UIStrings.HTTP.MENU,
+      view: HTTP,
+      iconCls: 'x-fa fa-truck',
+      visibility: {
+        featureFlags: [{key: 'nexus.react.httpSettings', defaultValue: false}],
+        permissions: ['nexus:settings:read']
+      },
+    },
   ]
 });

@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import javax.annotation.Nullable;
@@ -447,6 +448,18 @@ public class DefaultCapabilityRegistry
     }
     eventManager.post(new AfterLoad(this));
   }
+
+ @Override
+  public void pullAndRefreshReferencesFromDB() {
+   Map<CapabilityIdentity, CapabilityStorageItem> refreshedCapabilities = capabilityStorage.getAll();
+   references.forEach((capabilityIdentity, capabilityReference) ->
+       Optional.of(refreshedCapabilities.get(capabilityIdentity)) // When working in HA mode it could be null
+           .ifPresent(value -> {
+             DefaultCapabilityReference reference = get(capabilityIdentity);
+             Map<String, String> decryptedProps = decryptValuesIfNeeded(reference.descriptor(), value.getProperties());
+             capabilityReference.update(decryptedProps, capabilityReference.properties());
+           }));
+ }
 
   private DefaultCapabilityReference create(final CapabilityIdentity id,
                                             final CapabilityType type,

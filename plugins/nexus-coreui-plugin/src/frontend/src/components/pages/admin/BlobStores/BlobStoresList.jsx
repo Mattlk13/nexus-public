@@ -16,6 +16,16 @@ import {useMachine} from '@xstate/react';
 import {
   ContentBody,
   HelpTile,
+  HumanReadableUtils,
+  ListMachineUtils,
+  Page,
+  PageHeader,
+  PageTitle,
+  PageActions,
+  Section,
+  SectionToolbar,
+} from '@sonatype/nexus-ui-plugin';
+import {
   NxButton,
   NxFilterInput,
   NxFontAwesomeIcon,
@@ -24,20 +34,11 @@ import {
   NxTableCell,
   NxTableHead,
   NxTableRow,
-  Page,
-  PageHeader,
-  PageTitle,
-  PageActions,
-  Section,
-  SectionToolbar,
-  Utils
-} from '@sonatype/nexus-ui-plugin';
+} from '@sonatype/react-shared-components';
 import {
   faCheckCircle,
-  faChevronRight,
   faExclamationCircle,
-  faInfoCircle,
-  faServer
+  faServer,
 } from '@fortawesome/free-solid-svg-icons';
 
 import BlobStoresListMachine from './BlobStoresListMachine';
@@ -51,18 +52,18 @@ export default function BlobStoresList({onCreate, onEdit}) {
   const isLoading = current.matches('loading');
   const {data, error, filter: filterText} = current.context;
 
-  const nameSortDir = Utils.getSortDirection('name', current.context);
-  const typeSortDir = Utils.getSortDirection('typeName', current.context);
-  const stateSortDir = Utils.getSortDirection('available', current.context);
-  const countSortDir = Utils.getSortDirection('blobCount', current.context);
-  const sizeSortDir = Utils.getSortDirection('totalSizeInBytes', current.context);
-  const spaceSortDir = Utils.getSortDirection('availableSpaceInBytes', current.context);
+  const nameSortDir = ListMachineUtils.getSortDirection('name', current.context);
+  const typeSortDir = ListMachineUtils.getSortDirection('typeName', current.context);
+  const stateSortDir = ListMachineUtils.getSortDirection('available', current.context);
+  const countSortDir = ListMachineUtils.getSortDirection('blobCount', current.context);
+  const sizeSortDir = ListMachineUtils.getSortDirection('totalSizeInBytes', current.context);
+  const spaceSortDir = ListMachineUtils.getSortDirection('availableSpaceInBytes', current.context);
   const sortByName = () => send('SORT_BY_NAME');
   const sortByType = () => send('SORT_BY_TYPE_NAME');
-  const sortByState = () => send('SORT_BY_STATE');
-  const sortByCount = () => send('SORT_BY_COUNT');
-  const sortBySize = () => send('SORT_BY_SIZE');
-  const sortBySpace = () => send('SORT_BY_SPACE');
+  const sortByState = () => send('SORT_BY_AVAILABLE');
+  const sortByCount = () => send('SORT_BY_BLOB_COUNT');
+  const sortBySize = () => send('SORT_BY_TOTAL_SIZE_IN_BYTES');
+  const sortBySpace = () => send('SORT_BY_AVAILABLE_SPACE_IN_BYTES');
 
   const filter = (value) => send({type: 'FILTER', filter: value});
 
@@ -111,13 +112,13 @@ export default function BlobStoresList({onCreate, onEdit}) {
                         <span>{available ? BLOB_STORES.LIST.AVAILABLE : BLOB_STORES.LIST.UNAVAILABLE}</span>
                       </NxTableCell>
                       <NxTableCell isNumeric>{unavailable ? BLOB_STORES.LIST.UNKNOWN : blobCount}</NxTableCell>
-                      <NxTableCell isNumeric>{unavailable ? BLOB_STORES.LIST.UNKNOWN : Utils.bytesToString(
+                      <NxTableCell isNumeric>{unavailable ? BLOB_STORES.LIST.UNKNOWN : HumanReadableUtils.bytesToString(
                           totalSizeInBytes)} ({totalSizeInBytes})</NxTableCell>
                       <NxTableCell isNumeric>
                         {
                           (unavailable && BLOB_STORES.LIST.UNKNOWN) ||
                           (unlimited && BLOB_STORES.LIST.UNLIMITED) ||
-                          Utils.bytesToString(availableSpaceInBytes)
+                          HumanReadableUtils.bytesToString(availableSpaceInBytes)
                         }
                       </NxTableCell>
                       <NxTableCell chevron/>
@@ -127,10 +128,7 @@ export default function BlobStoresList({onCreate, onEdit}) {
         </NxTable>
       </Section>
 
-      <HelpTile>
-        <h3><NxFontAwesomeIcon icon={faInfoCircle}/><span>{BLOB_STORES.LIST.HELP.TITLE}</span></h3>
-        <p dangerouslySetInnerHTML={{__html: BLOB_STORES.LIST.HELP.TEXT}}/>
-      </HelpTile>
+      <HelpTile header={BLOB_STORES.LIST.HELP.TITLE} body={BLOB_STORES.LIST.HELP.TEXT}/>
     </ContentBody>
   </Page>;
 }

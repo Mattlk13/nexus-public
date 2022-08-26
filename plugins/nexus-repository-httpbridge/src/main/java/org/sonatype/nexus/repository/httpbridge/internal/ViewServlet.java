@@ -14,7 +14,6 @@ package org.sonatype.nexus.repository.httpbridge.internal;
 
 import java.io.IOException;
 import java.util.Enumeration;
-
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;

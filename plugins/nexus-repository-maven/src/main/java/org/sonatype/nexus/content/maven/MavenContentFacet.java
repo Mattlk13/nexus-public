@@ -13,17 +13,22 @@
 package org.sonatype.nexus.content.maven;
 
 import java.io.IOException;
-import java.nio.file.Path;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import javax.annotation.Nullable;
+
+import org.sonatype.nexus.common.entity.Continuation;
 import org.sonatype.nexus.content.maven.store.GAV;
 import org.sonatype.nexus.content.maven.store.Maven2ComponentData;
 import org.sonatype.nexus.repository.Facet;
+import org.sonatype.nexus.repository.content.Asset;
 import org.sonatype.nexus.repository.content.Component;
 import org.sonatype.nexus.repository.content.facet.ContentFacet;
 import org.sonatype.nexus.repository.content.fluent.FluentAsset;
+import org.sonatype.nexus.repository.content.fluent.FluentComponent;
 import org.sonatype.nexus.repository.maven.MavenFacet;
 import org.sonatype.nexus.repository.maven.MavenPath;
 import org.sonatype.nexus.repository.view.Content;
@@ -120,6 +125,70 @@ public interface MavenContentFacet
                                                  final String releaseVersion);
 
   /**
+   * Find jar assets associated with Components in the namespace of kind maven-plugin.
+   *
+   * @param limit maximum number of assets to return
+   * @param continuationToken optional token to continue from a previous request
+   * @param namespace the namespace to find plugins for
+   *
+   * @return collection of assets and the next continuation token
+   *
+   * @see Continuation#nextContinuationToken()
+   */
+  Continuation<Asset> findMavenPluginAssetsForNamespace(
+      int limit,
+      @Nullable String continuationToken,
+      String namespace);
+
+  /**
+   * Find components with the GAbV.
+   *
+   * @param limit maximum number of assets to return
+   * @param continuationToken optional token to continue from a previous request
+   * @param namespace the namespace
+   * @param name artifact name
+   * @param baseVersion artifact base version
+   *
+   * @return collection of assets and the next continuation token
+   *
+   * @see Continuation#nextContinuationToken()
+   */
+  Continuation<FluentComponent> findComponentsForBaseVersion(
+      int limit,
+      @Nullable String continuationToken,
+      String namespace,
+      String name,
+      String baseVersion);
+
+  /**
+   * Find Components in the provided GroupId & ArtifactId.
+   *
+   * @param limit maximum number of assets to return
+   * @param continuationToken optional token to continue from a previous request
+   * @param namespace the namespace
+   * @param name artifact name
+   *
+   * @return collection of assets and the next continuation token
+   *
+   * @see Continuation#nextContinuationToken()
+   */
+  Continuation<FluentComponent> findComponentsInGA(
+      int limit,
+      @Nullable String continuationToken,
+      String namespace,
+      String name);
+
+  /**
+   * Retrieve known base versions for a provided GA.
+   *
+   * @param namespace    the namespace for the components
+   * @param name         the name for the components
+   *
+   * @return a unique set of base versions
+   */
+  Collection<String> getBaseVersions(String namespace, String name);
+
+  /**
    * Find snapshots to delete for which a release version exists
    *
    * @param gracePeriod an optional period to keep snapshots around.
@@ -139,11 +208,10 @@ public interface MavenContentFacet
   FluentAsset createComponentAndAsset(final MavenPath mavenPath);
 
   /**
-   * Hard link some content to an asset
-   * @param asset
-   * @param path
-   * @param contentPath
-   * @throws IOException
+   * @param source component to copy
+   * @return a new component copied from the source to the current repository
+   *
+   * @since 3.38
    */
-  void hardLink(FluentAsset asset, Path contentPath) throws IOException;
+  FluentComponent copy(final Component source);
 }

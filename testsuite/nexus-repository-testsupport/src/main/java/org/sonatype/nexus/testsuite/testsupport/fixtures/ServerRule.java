@@ -22,6 +22,10 @@ import org.sonatype.nexus.common.net.PortAllocator;
 
 import static org.apache.commons.lang3.StringUtils.prependIfMissing;
 
+/**
+ * @deprecated in favor of ServerTestSystem in the new IT Framework
+ */
+@Deprecated()
 public class ServerRule
     extends ExternalResourceSupport
 {
@@ -46,7 +50,7 @@ public class ServerRule
 
   public Server createServer(final int port, final Map<String, Behaviour> behaviors) throws Exception {
     Server server = Server.withPort(port);
-    behaviors.entrySet().forEach(e -> server.serve(prependIfMissing(e.getKey(), "/")).withBehaviours(e.getValue()));
+    behaviors.forEach((key, value) -> server.serve(prependIfMissing(key, "/")).withBehaviours(value));
     servers.add(server);
     server.start();
     return server;

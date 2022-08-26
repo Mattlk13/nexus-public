@@ -12,15 +12,19 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal
 
+import java.util.concurrent.Callable
+import java.util.concurrent.Future
 import java.util.stream.Collectors
 
 import org.sonatype.nexus.blobstore.BlobIdLocationResolver
 import org.sonatype.nexus.blobstore.DefaultBlobIdLocationResolver
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration
+import org.sonatype.nexus.blobstore.api.Blob
 import org.sonatype.nexus.blobstore.api.BlobId
 import org.sonatype.nexus.blobstore.api.BlobMetrics
 import org.sonatype.nexus.blobstore.api.BlobStoreException
 import org.sonatype.nexus.blobstore.api.BlobStoreUsageChecker
+import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaUsageChecker
 import org.sonatype.nexus.common.log.DryRunPrefix
 
 import com.amazonaws.SdkClientException
@@ -28,16 +32,17 @@ import com.amazonaws.services.s3.AmazonS3
 import com.amazonaws.services.s3.model.AmazonS3Exception
 import com.amazonaws.services.s3.model.DeleteObjectsRequest
 import com.amazonaws.services.s3.model.DeleteObjectsResult
-import com.amazonaws.services.s3.model.DeleteObjectsResult.DeletedObject
 import com.amazonaws.services.s3.model.ListObjectsRequest
 import com.amazonaws.services.s3.model.ObjectListing
 import com.amazonaws.services.s3.model.ObjectMetadata
 import com.amazonaws.services.s3.model.S3Object
 import com.amazonaws.services.s3.model.S3ObjectInputStream
 import com.amazonaws.services.s3.model.S3ObjectSummary
+import com.amazonaws.services.s3.model.DeleteObjectsResult.DeletedObject
 import spock.lang.Specification
 import spock.lang.Unroll
 
+import static java.util.concurrent.Executors.newFixedThreadPool
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_FILE_ATTRIBUTES_SUFFIX
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_FILE_CONTENT_SUFFIX
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER
@@ -62,7 +67,9 @@ class S3BlobStoreTest
 
   S3Copier copier =  Mock()
 
-  S3BlobStoreMetricsStore storeMetrics = Mock()
+  OrientS3BlobStoreMetricsStore storeMetrics = Mock()
+
+  BlobStoreQuotaUsageChecker blobStoreQuotaUsageChecker = Mock()
 
   DryRunPrefix dryRunPrefix = Mock()
 
@@ -71,7 +78,7 @@ class S3BlobStoreTest
   AmazonS3 s3 = Mock()
 
   S3BlobStore blobStore = new S3BlobStore(amazonS3Factory, locationResolver, uploader, copier, false, false, false,
-      storeMetrics, dryRunPrefix, bucketManager)
+      storeMetrics, dryRunPrefix, bucketManager, blobStoreQuotaUsageChecker)
 
   def config = new MockBlobStoreConfiguration()
 
@@ -388,7 +395,6 @@ class S3BlobStoreTest
       1 * s3.listObjects('mybucket', 'myPrefix/content/') >> Mock(ObjectListing) {
         getObjectSummaries() >> [Mock(S3ObjectSummary)]
       }
-      0 * storeMetrics.remove()
       0 * s3.deleteObject('mybucket', 'myPrefix/metadata.properties')
       0 * bucketManager.deleteStorageLocation(config)
       1 * s3.deleteBucketLifecycleConfiguration('mybucket')
@@ -469,7 +475,7 @@ class S3BlobStoreTest
   def "expiry test"(){
     given: 'blob exists'
       def expiryPreferredBlobStore = new S3BlobStore(amazonS3Factory, locationResolver, uploader, copier, true, false, false,
-          storeMetrics, dryRunPrefix, bucketManager)
+          storeMetrics, dryRunPrefix, bucketManager, blobStoreQuotaUsageChecker)
 
       def blobId = new BlobId('soft-delete-success')
       def cfg = new MockBlobStoreConfiguration()
@@ -499,7 +505,7 @@ class S3BlobStoreTest
   def "hard delete hard deletes when prefered"(){
     given: 'blob exists'
       def hardDeleteStore = new S3BlobStore(amazonS3Factory, locationResolver, uploader, copier, true, true, false,
-          storeMetrics, dryRunPrefix, bucketManager)
+          storeMetrics, dryRunPrefix, bucketManager, blobStoreQuotaUsageChecker)
 
       def blobId = new BlobId('soft-delete-success')
       def cfg = new MockBlobStoreConfiguration()
@@ -532,7 +538,7 @@ class S3BlobStoreTest
   def "regular delete hard deletes when prefered"(){
     given: 'blob exists'
       def hardDeleteStore = new S3BlobStore(amazonS3Factory, locationResolver, uploader, copier, true, true, false,
-          storeMetrics, dryRunPrefix, bucketManager)
+          storeMetrics, dryRunPrefix, bucketManager, blobStoreQuotaUsageChecker)
 
       def blobId = new BlobId('soft-delete-success')
       def cfg = new MockBlobStoreConfiguration()
@@ -560,6 +566,33 @@ class S3BlobStoreTest
       null     | _
       ""       | _
       "prefix" | _
+  }
+
+  def "Concurrent attempts to refresh blob should never return null"() {
+    given: 'A mocked S3 setup'
+      def cfg = new MockBlobStoreConfiguration()
+      cfg.attributes = [s3: [bucket: 'mybucket']]
+
+      def blobId = new BlobId('test')
+      def attributesS3Object = mockS3Object(attributesContents)
+      def contentS3Object = mockS3Object('hello world')
+      _ * bucketManager.prepareStorageLocation(cfg)
+      _ * s3.doesObjectExist('mybucket', propertiesLocation(blobId)) >> true
+      _ * s3.getObject('mybucket', propertiesLocation(blobId)) >> attributesS3Object
+      _ * s3.getObject('mybucket', bytesLocation(blobId)) >> contentS3Object
+
+    when: 'Existing stale blobs are read concurrently'
+      blobStore.init(cfg)
+      blobStore.doStart()
+      def executorService = newFixedThreadPool(2)
+      def callable = { blobStore.get(blobId) }
+      def results = ([executorService.submit(callable as Callable<Blob>),
+                      executorService.submit(callable as Callable<Blob>)] as List<Future<Blob>>)
+
+      executorService.shutdown()
+    then: 'The blobs are not null'
+      results.get(0).get() != null
+      results.get(1).get() != null
   }
 
   def 'create does not create temp blobs with tmp$ blob id'() {

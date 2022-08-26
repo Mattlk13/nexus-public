@@ -12,7 +12,9 @@
  */
 package org.sonatype.nexus.repository.config;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
 import org.sonatype.goodies.lifecycle.Lifecycle;
 
@@ -38,4 +40,13 @@ public interface ConfigurationStore
    * @since 3.21
    */
   Configuration newConfiguration();
+
+  Collection<Configuration> readByNames(Set<String> repositoryNames);
+
+  /**
+   * Checks whether the database contains an entry with the provided name.<br>
+   *
+   * Note: Underlying implementations may return {@code false} if unsupported.
+   */
+  boolean exists(String repositoryName);
 }

@@ -34,7 +34,6 @@ import org.sonatype.nexus.repository.maven.MavenPath.HashType;
 import org.sonatype.nexus.repository.maven.MavenPathParser;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.maven.internal.Maven2MavenPathParser;
-import org.sonatype.nexus.repository.maven.internal.hosted.metadata.MetadataRebuilder;
 import org.sonatype.nexus.repository.maven.internal.validation.MavenMetadataContentValidator;
 import org.sonatype.nexus.repository.storage.Asset;
 import org.sonatype.nexus.repository.storage.AssetBlob;
@@ -68,9 +67,11 @@ import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -96,7 +97,7 @@ public class MavenFacetImplTest
   private MavenMetadataContentValidator mavenMetadataContentValidator;
 
   @Mock
-  private MetadataRebuilder metadataRebuilder;
+  private OrientMetadataRebuilder metadataRebuilder;
 
   @Mock
   private StorageTx storageTx;
@@ -129,7 +130,7 @@ public class MavenFacetImplTest
       protected void configure() {
         bind(EventManager.class).toInstance(eventManager);
         bind(MavenMetadataContentValidator.class).toInstance(mavenMetadataContentValidator);
-        bind(MetadataRebuilder.class).toInstance(metadataRebuilder);
+        bind(OrientMetadataRebuilder.class).toInstance(metadataRebuilder);
         bindConstant().annotatedWith(named("${nexus.maven.metadata.validation.enabled:-true}")).to(true);
         bind(new TypeLiteral<Map<String, MavenPathParser>>() { })
             .toInstance(ImmutableMap.of(Maven2Format.NAME, maven2MavenPathParser));
@@ -156,7 +157,7 @@ public class MavenFacetImplTest
     Blob blob = mock(Blob.class);
     when(blob.getInputStream())
         .thenReturn(getClass().getResourceAsStream("/org/sonatype/nexus/repository/maven/gavMetadata.xml"));
-    when(storageTx.findAssetWithProperty(any(), any(), any(Bucket.class))).thenReturn(asset);
+    when(storageTx.findAssetWithProperty(anyString(), anyString(), nullable(Bucket.class))).thenReturn(asset);
     when(storageTx.requireBlob(any())).thenReturn(blob);
     MavenPath mavenPath = maven2MavenPathParser.parsePath(path);
     Content content = underTest.get(mavenPath);
@@ -175,7 +176,7 @@ public class MavenFacetImplTest
     Blob blob = mock(Blob.class);
     when(blob.getInputStream())
         .thenReturn(getClass().getResourceAsStream("/org/sonatype/nexus/repository/maven/gavMetadata.xml"));
-    when(storageTx.findAssetWithProperty(any(), any(), any(Bucket.class))).thenReturn(asset);
+    when(storageTx.findAssetWithProperty(anyString(), anyString(), nullable(Bucket.class))).thenReturn(asset);
     when(storageTx.requireBlob(any())).thenReturn(blob);
     MavenPath mavenPath = maven2MavenPathParser.parsePath(path);
     Content content = underTest.get(mavenPath);
@@ -228,7 +229,7 @@ public class MavenFacetImplTest
     assertEquals(blobCreatedCaptor.getValue(), uploadedDate);
   }
 
-  private Asset createMetadataAsset(String name, String cacheToken) {
+  private Asset createMetadataAsset(final String name, final String cacheToken) {
     Asset asset = new Asset();
     asset.contentType(TEXT_XML);
     asset.name(name);

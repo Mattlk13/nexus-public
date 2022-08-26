@@ -37,6 +37,7 @@ import org.junit.runners.model.Statement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 import static com.google.common.base.Throwables.throwIfUnchecked;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
@@ -210,6 +211,12 @@ public class DataSessionRule
   }
 
   @Override
+  public DataSession<?> openSerializableTransactionSession(final String storeName) {
+    return ofNullable(stores.get(storeName)).orElseThrow(() -> new DataStoreNotFoundException(storeName))
+        .openSerializableTransactionSession();
+  }
+
+  @Override
   public Connection openConnection(final String storeName) throws SQLException {
     return ofNullable(stores.get(storeName)).orElseThrow(() -> new DataStoreNotFoundException(storeName)).openConnection();
   }
@@ -232,7 +239,9 @@ public class DataSessionRule
 
   protected String startPostgres() {
     //11.9 is the minimum support version
-    postgres = new PostgreSQLContainer<>("docker-all.repo.sonatype.com/postgres:11.9");
+
+    postgres = new PostgreSQLContainer<>(DockerImageName.parse("docker-all.repo.sonatype.com/postgres:11.9")
+        .asCompatibleSubstituteFor("postgres"));
     postgres.start();
 
     // use the same underlying PostgreSQL database as backing for each store

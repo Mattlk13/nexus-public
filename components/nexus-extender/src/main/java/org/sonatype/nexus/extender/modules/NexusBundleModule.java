@@ -31,6 +31,7 @@ import org.osgi.framework.Constants;
 
 import static java.lang.Boolean.parseBoolean;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
+import static org.sonatype.nexus.common.app.FeatureFlags.JWT_ENABLED;
 import static org.sonatype.nexus.extender.modules.FeatureFlaggedIndex.filterByFeatureFlag;
 
 /**
@@ -45,15 +46,17 @@ public class NexusBundleModule
 
   private static final SecurityFilterModule securityFilterModule = new SecurityFilterModule();
 
-  private static final MetricsRegistryModule metricsRegistryModule = new MetricsRegistryModule();
+  private static final JwtSecurityFilterModule jwtSecurityFilterModule = new JwtSecurityFilterModule();
 
-  private static final InstrumentationModule instrumentationModule = new InstrumentationModule();
+  private static final MetricsRegistryModule metricsRegistryModule = new MetricsRegistryModule();
 
   private static final ValidationModule validationModule = new ValidationModule();
 
   private static final WebResourcesModule webResourcesModule = new WebResourcesModule();
 
   private static final RankingModule rankingModule = new RankingModule();
+
+  private final InstrumentationModule instrumentationModule;
 
   private final Map<?, ?> nexusProperties;
 
@@ -65,12 +68,13 @@ public class NexusBundleModule
 
   private final String imports;
 
-  public NexusBundleModule(final Bundle bundle,
-                           final MutableBeanLocator locator,
-                           final Map<?, ?> nexusProperties,
-                           final ServletContextModule servletContextModule,
-                           final List<AbstractInterceptorModule> interceptorModules,
-                           final List<TypeConverterSupport> converterModules)
+  public NexusBundleModule(
+      final Bundle bundle,
+      final MutableBeanLocator locator,
+      final Map<?, ?> nexusProperties,
+      final ServletContextModule servletContextModule,
+      final List<AbstractInterceptorModule> interceptorModules,
+      final List<TypeConverterSupport> converterModules)
   {
     super(bundle, locator);
 
@@ -78,6 +82,7 @@ public class NexusBundleModule
     this.servletContextModule = servletContextModule;
     this.interceptorModules = interceptorModules;
     this.converterModules = converterModules;
+    this.instrumentationModule = new InstrumentationModule(this.nexusProperties);
 
     imports = Strings.nullToEmpty(bundle.getHeaders().get(Constants.IMPORT_PACKAGE));
   }
@@ -114,14 +119,19 @@ public class NexusBundleModule
   private void maybeAddDataAccessBindings(final List<Module> modules) {
     if (parseBoolean((String) nexusProperties.get(DATASTORE_ENABLED))
         && (imports.contains("org.sonatype.nexus.datastore")
-            || imports.contains("org.sonatype.nexus.repository.content"))) {
+        || imports.contains("org.sonatype.nexus.repository.content"))) {
       modules.add(new DataAccessModule(space.getBundle()));
     }
   }
 
   private void maybeAddSecurityFilter(final List<Module> modules) {
     if (imports.contains("org.sonatype.nexus.security")) {
-      modules.add(securityFilterModule);
+      if (parseBoolean((String) nexusProperties.get(JWT_ENABLED))) {
+        modules.add(jwtSecurityFilterModule);
+      }
+      else {
+        modules.add(securityFilterModule);
+      }
     }
   }
 
@@ -147,9 +157,6 @@ public class NexusBundleModule
     modules.add(shiroAopModule);
     modules.add(instrumentationModule);
     modules.add(validationModule);
-
-    for (AbstractInterceptorModule aim : interceptorModules) {
-      modules.add(aim);
-    }
+    modules.addAll(interceptorModules);
   }
 }

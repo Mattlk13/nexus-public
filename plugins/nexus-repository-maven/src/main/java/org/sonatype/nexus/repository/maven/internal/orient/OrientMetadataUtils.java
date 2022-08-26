@@ -14,13 +14,16 @@ package org.sonatype.nexus.repository.maven.internal.orient;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
 
 import javax.annotation.Nullable;
 
+import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.common.hash.HashAlgorithm;
 import org.sonatype.nexus.orient.maven.OrientMavenFacet;
+import org.sonatype.nexus.repository.MissingBlobException;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.cache.CacheInfo;
 import org.sonatype.nexus.repository.maven.MavenPath;
@@ -49,6 +52,7 @@ import static com.google.common.base.Preconditions.checkState;
 import static java.lang.Boolean.TRUE;
 import static java.util.Objects.requireNonNull;
 import static org.sonatype.nexus.repository.cache.CacheInfo.extractFromAsset;
+import static org.sonatype.nexus.repository.maven.internal.Constants.METADATA_FILENAME;
 
 /**
  * Utility class containing shared (orient specific) methods for Maven metadata.
@@ -76,16 +80,29 @@ public final class OrientMetadataUtils
    */
   @Nullable
   public static Metadata read(final Repository repository, final MavenPath mavenPath) throws IOException {
-    final Content content = repository.facet(OrientMavenFacet.class).get(mavenPath);
-    if (content == null) {
-      return null;
-    }
-    else {
-      Metadata metadata = MavenModels.readMetadata(content.openInputStream());
-      if (metadata == null) {
-        log.warn("Corrupted metadata {} @ {}", repository.getName(), mavenPath.getPath());
+    try {
+      final Content content = repository.facet(OrientMavenFacet.class).get(mavenPath);
+      if (content == null) {
+        return null;
       }
-      return metadata;
+      else {
+        Metadata metadata = MavenModels.readMetadata(content.openInputStream());
+        if (metadata == null) {
+          log.warn("Corrupted metadata {} @ {}", repository.getName(), mavenPath.getPath());
+        }
+        return metadata;
+      }
+    }
+    catch (BlobStoreException | MissingBlobException e) {
+      if (log.isDebugEnabled()) {
+        log.warn(String.format("Found missing blob for metadata path %s, will return null (not found) caused by:",
+            mavenPath.getPath()), e);
+      }
+      else {
+        log.warn("Found missing blob for metadata path {}, will return null (not found) caused by {}",
+            mavenPath.getPath(), e.getMessage());
+      }
+      return null;
     }
   }
 
@@ -98,8 +115,9 @@ public final class OrientMetadataUtils
     OrientMavenFacet mavenFacet = repository.facet(OrientMavenFacet.class);
     final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
     MavenModels.writeMetadata(buffer, metadata);
-    mavenFacet.put(mavenPath, new BytesPayload(buffer.toByteArray(),
-        MavenMimeRulesSource.METADATA_TYPE));
+    final byte[] bytes = buffer.toByteArray();
+    logGAMetadataBlobIfDebug(mavenPath, bytes);
+    mavenFacet.put(mavenPath, new BytesPayload(bytes, MavenMimeRulesSource.METADATA_TYPE));
     final Map<HashAlgorithm, HashCode> hashCodes = mavenFacet.get(mavenPath).getAttributes()
         .require(Content.CONTENT_HASH_CODES_MAP, Content.T_CONTENT_HASH_CODES_MAP);
     checkState(hashCodes != null, "hashCodes");
@@ -108,6 +126,20 @@ public final class OrientMetadataUtils
       HashCode hashCode = hashCodes.get(hashType.getHashAlgorithm());
       checkState(hashCode != null, "hashCode: type=%s", hashType);
       mavenFacet.put(checksumPath, new StringPayload(hashCode.toString(), Constants.CHECKSUM_CONTENT_TYPE));
+    }
+  }
+
+  private static void logGAMetadataBlobIfDebug(
+      final MavenPath mavenPath,
+      final byte[] bytes)
+  {
+    if (log.isDebugEnabled()) {
+      final String path = mavenPath.getPath();
+      if (mavenPath.getFileName().equals(METADATA_FILENAME)
+          && !path.endsWith("-SNAPSHOT/maven-metadata.xml")) {
+        log.debug("Attempting to put GA metadata. Path {}, content = {}", path,
+            new String(bytes, StandardCharsets.UTF_8));
+      }
     }
   }
 

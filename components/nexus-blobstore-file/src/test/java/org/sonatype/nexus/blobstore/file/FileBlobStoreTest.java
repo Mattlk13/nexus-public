@@ -32,8 +32,9 @@ import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.blobstore.api.BlobStoreUsageChecker;
-import org.sonatype.nexus.blobstore.file.internal.FileBlobStoreMetricsStore;
 import org.sonatype.nexus.blobstore.file.internal.FileOperations;
+import org.sonatype.nexus.blobstore.file.internal.OrientFileBlobStoreMetricsStore;
+import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaUsageChecker;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 import org.sonatype.nexus.common.node.NodeAccess;
@@ -52,27 +53,30 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.mockito.Mock;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.nio.file.Files.write;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.fail;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.verifyZeroInteractions;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.DirectPathLocationStrategy.DIRECT_PATH_ROOT;
 import static org.sonatype.nexus.blobstore.api.BlobAttributesConstants.HEADER_PREFIX;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CREATED_BY_HEADER;
+import static org.sonatype.nexus.blobstore.file.FileBlobStore.CONTENT;
+import static org.sonatype.nexus.blobstore.file.FileBlobStore.TMP;
 
 /**
  * Tests {@link FileBlobStore}.
@@ -90,6 +94,8 @@ public class FileBlobStoreTest
 
   private static final byte[] EMPTY_BLOB_STORE_PROPERTIES = ("").getBytes(StandardCharsets.ISO_8859_1);
 
+  private static final String RECONCILIATION = "reconciliation";
+
   private AtomicBoolean cancelled = new AtomicBoolean(false);
 
   @Mock
@@ -102,13 +108,19 @@ public class FileBlobStoreTest
   private ApplicationDirectories appDirs;
 
   @Mock
-  private FileBlobStoreMetricsStore metrics;
+  private OrientFileBlobStoreMetricsStore metrics;
+
+  @Mock
+  private BlobStoreQuotaUsageChecker blobStoreQuotaUsageChecker;
 
   @Mock
   private LoadingCache loadingCache;
 
   @Mock
   private BlobStoreUsageChecker blobStoreUsageChecker;
+
+  @Mock
+  private FileBlobDeletionIndex fileBlobDeletionIndex;
 
   @Mock
   private FileBlobAttributes attributes;
@@ -134,6 +146,7 @@ public class FileBlobStoreTest
 
   private Path fullPath;
 
+  private Path directFullPath;
 
   @Before
   public void initBlobStore() throws IOException {
@@ -156,9 +169,9 @@ public class FileBlobStoreTest
 
     configuration.setAttributes(attributes);
 
-    underTest = new FileBlobStore(util.createTempDir().toPath(),
-        blobIdLocationResolver, fileOperations, metrics, configuration,
-        appDirs, nodeAccess, dryRunPrefix, reconciliationLogger);
+    underTest = new FileBlobStore(util.createTempDir().toPath(), blobIdLocationResolver, fileOperations, metrics,
+        configuration, appDirs, nodeAccess, dryRunPrefix, reconciliationLogger, 0L, blobStoreQuotaUsageChecker,
+        fileBlobDeletionIndex);
 
     when(loadingCache.getUnchecked(any())).thenReturn(underTest.new FileBlob(new BlobId("fakeid")));
 
@@ -166,8 +179,11 @@ public class FileBlobStoreTest
     underTest.setLiveBlobs(loadingCache);
 
     fullPath = underTest.getAbsoluteBlobDir()
-        .resolve("content").resolve("vol-03").resolve("chap-44");
+        .resolve(CONTENT).resolve("vol-03").resolve("chap-44");
     Files.createDirectories(fullPath);
+
+    directFullPath = underTest.getAbsoluteBlobDir().resolve(CONTENT).resolve("directpath");
+    Files.createDirectories(directFullPath);
 
     when(blobIdLocationResolver.getLocation(any(BlobId.class))).thenAnswer(invocation -> {
       BlobId blobId = (BlobId) invocation.getArguments()[0];
@@ -195,7 +211,7 @@ public class FileBlobStoreTest
 
     underTest.create(path, TEST_HEADERS, 0, HashCode.fromString("da39a3ee5e6b4b0d3255bfef95601890afd80709"));
 
-    verifyZeroInteractions(reconciliationLogger);
+    verifyNoInteractions(reconciliationLogger);
   }
 
   @Test
@@ -210,7 +226,7 @@ public class FileBlobStoreTest
 
     assertThat(blob.getMetrics().getContentSize(), is(size));
     assertThat(blob.getMetrics().getSha1Hash(), is("356a192b7913b04c54574d18c28d46e6395428ab"));
-    verify(reconciliationLogger).logBlobCreated(eq(underTest), any());
+    verify(reconciliationLogger).logBlobCreated(eq(underTest.getAbsoluteBlobDir().resolve(RECONCILIATION)), any());
   }
 
   @Test
@@ -226,7 +242,8 @@ public class FileBlobStoreTest
     underTest.create(path, TEST_HEADERS, size, sha1);
 
     verify(fileOperations, times(4)).exists(any());
-    verify(reconciliationLogger, times(1)).logBlobCreated(eq(underTest), any());
+    verify(reconciliationLogger, times(1))
+        .logBlobCreated(eq(underTest.getAbsoluteBlobDir().resolve(RECONCILIATION)), any());
   }
 
   @Test
@@ -289,6 +306,45 @@ public class FileBlobStoreTest
     checkDeletionsIndex(true);
 
     verify(blobStoreUsageChecker, never()).test(any(), any(), any());
+  }
+
+  @Test
+  public void testDoCompact_clearsDirectPathEmptyDirectories() throws Exception {
+    when(fileOperations.delete(any())).thenReturn(true);
+    when(nodeAccess.isOldestNode()).thenReturn(true);
+    underTest.doStart();
+
+    Path fileInSubdir1 = directFullPath.resolve("subdir").resolve("somefile.txt");
+    fileInSubdir1.toFile().getParentFile().mkdirs();
+    write(fileInSubdir1, "somefile".getBytes(UTF_8));
+
+    Path subdir2 = directFullPath.resolve("subdir2");
+    subdir2.toFile().mkdirs();
+
+    assertThat(fileInSubdir1.toFile().exists(), is(true));
+    assertThat(subdir2.toFile().exists(), is(true));
+
+    underTest.doCompact(blobStoreUsageChecker);
+
+    assertThat(fileInSubdir1.toFile().exists(), is(true));
+    assertThat(subdir2.toFile().exists(), is(false));
+  }
+
+  @Test
+  public void testDeleteBlobTempFiles() throws Exception {
+    underTest.doStart();
+
+    Path tmpFilePath = underTest.getAbsoluteBlobDir()
+        .resolve(CONTENT).resolve(TMP).resolve("tmp$0515c8b9-0de0-49d4-bcf0-7738c40c9c5e.properties");
+
+    tmpFilePath.toFile().getParentFile().mkdirs();
+    write(tmpFilePath, "@BlobStore.created-by=system".getBytes(UTF_8));
+
+    assertThat(tmpFilePath.toFile().exists(), is(true));
+
+    underTest.doDeleteTempFiles();
+
+    assertThat(tmpFilePath.toFile().exists(), is(false));
   }
 
   @Test
@@ -360,7 +416,7 @@ public class FileBlobStoreTest
 
     setRebuildMetadataToTrue();
 
-    underTest.compact();
+    underTest.compact(null);
 
     verify(fileOperations, times(2)).delete(any());
   }
@@ -377,7 +433,7 @@ public class FileBlobStoreTest
     cancelled.set(true);
 
     try {
-      underTest.compact();
+      underTest.compact(null);
       fail("Expected exception to be thrown");
     }
     catch (TaskInterruptedException expected) {
@@ -435,7 +491,7 @@ public class FileBlobStoreTest
 
   @Test
   public void getBlobAttributesReturnsNullWhenExceptionIsThrown() throws Exception {
-    Path propertiesPath = underTest.getAbsoluteBlobDir().resolve("content").resolve("test-blob.properties");
+    Path propertiesPath = underTest.getAbsoluteBlobDir().resolve(CONTENT).resolve("test-blob.properties");
     write(propertiesPath, EMPTY_BLOB_STORE_PROPERTIES);
 
     assertNull(underTest.getBlobAttributes(new BlobId("test-blob")));

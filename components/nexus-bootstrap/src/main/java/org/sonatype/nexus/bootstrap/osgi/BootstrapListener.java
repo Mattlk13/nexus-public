@@ -40,9 +40,14 @@ import static java.lang.Boolean.parseBoolean;
 import static java.util.prefs.Preferences.userRoot;
 import static org.apache.karaf.features.FeaturesService.Option.NoAutoRefreshBundles;
 import static org.apache.karaf.features.FeaturesService.Option.NoAutoRefreshManagedBundles;
-import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_CLUSTERED_ENABLED;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_DEVELOPER;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_TABLE_SEARCH;
+import static org.sonatype.nexus.common.app.FeatureFlags.ELASTIC_SEARCH_ENABLED;
+import static org.sonatype.nexus.common.app.FeatureFlags.JWT_ENABLED;
 import static org.sonatype.nexus.common.app.FeatureFlags.ORIENT_ENABLED;
+import static org.sonatype.nexus.common.app.FeatureFlags.SESSION_ENABLED;
 
 /**
  * {@link ServletContextListener} that bootstraps an OSGi-based application.
@@ -108,6 +113,7 @@ public class BootstrapListener
       }
 
       selectDatastoreFeature(properties);
+      selectAuthenticationFeature(properties);
 
       // pass bootstrap properties to embedded servlet listener
       servletContext.setAttribute("nexus.properties", properties);
@@ -239,6 +245,23 @@ public class BootstrapListener
       properties.setProperty(DATASTORE_ENABLED, "true");
     }
 
+    // datastore clustered mode includes datastore user mode
+    if (parseBoolean(properties.getProperty(DATASTORE_CLUSTERED_ENABLED, "false"))) {
+      properties.setProperty(DATASTORE_ENABLED, "true");
+    }
+
+    // datastore search mode enables datastore user mode
+    // disables elastic search mode
+    if (parseBoolean(properties.getProperty(DATASTORE_TABLE_SEARCH, "false"))) {
+      properties.setProperty(DATASTORE_ENABLED, "true");
+      properties.setProperty(ELASTIC_SEARCH_ENABLED, "false");
+    }
+
+    // elastic search disables datastore search mode
+    if (parseBoolean(properties.getProperty(ELASTIC_SEARCH_ENABLED, "false"))) {
+      properties.setProperty(DATASTORE_TABLE_SEARCH, "false");
+    }
+
     if (parseBoolean(properties.getProperty(DATASTORE_ENABLED, "false"))) {
       // datastore mode disables orient
       properties.setProperty(ORIENT_ENABLED, "false");
@@ -263,10 +286,15 @@ public class BootstrapListener
       properties.setProperty(NEXUS_DB_FEATURE, "nexus-datastore-mybatis");
       properties.setProperty(DATASTORE_ENABLED, "true");
       properties.setProperty("nexus.quartz.jobstore.jdbc", "true");
-      if (NEXUS_OSS_EDITION.equals(properties.getProperty(NEXUS_EDITION))) {
-        properties.setProperty(NEXUS_EXCLUDE_FEATURES,
-            "nexus-cma-feature," + properties.getProperty(NEXUS_EXCLUDE_FEATURES, ""));
-      }
+    }
+  }
+
+  private static void selectAuthenticationFeature(final Properties properties) {
+    if (parseBoolean(properties.getProperty(SESSION_ENABLED, "true"))) {
+      properties.setProperty(SESSION_ENABLED, "true");
+    }
+    if (parseBoolean(properties.getProperty(JWT_ENABLED, "false"))) {
+      properties.setProperty(SESSION_ENABLED, "false");
     }
   }
 

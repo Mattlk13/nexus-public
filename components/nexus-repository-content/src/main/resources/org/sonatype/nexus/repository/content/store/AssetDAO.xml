@@ -71,8 +71,45 @@
 
   <resultMap id="assetResult" type="AssetData">
     <result property="assetBlobId" column="asset_blob_id"/>
+    <result property="componentId" column="component_id" />
     <association property="component" column="component_id" select="fetchComponent" fetchType="lazy"/>
     <association property="assetBlob" column="asset_blob_id" select="fetchAssetBlob" fetchType="lazy"/>
+  </resultMap>
+
+  <resultMap id="assetResultMap" type="AssetData">
+    <id property="assetId" column="asset_id"/>
+    <result property="path" column="path"/>
+    <result property="kind" column="kind" />
+    <result property="componentId" column="component_id" />
+    <result property="assetBlobId" column="asset_blob_id"/>
+    <result property="lastDownloaded" column="last_downloaded"/>
+    <result property="attributes" column="attributes"/>
+    <result property="created" column="created"/>
+    <result property="lastUpdated" column="last_updated"/>
+    <association property="component" resultMap="ComponentDataResult"/>
+    <association property="assetBlob" resultMap="AssetBlobResult"/>
+  </resultMap>
+
+  <resultMap id="ComponentDataResult" type="ComponentData">
+    <id property="componentId" column="component_id"/>
+    <result property="namespace" column="namespace" />
+    <result property="name" column="name" />
+    <result property="kind" column="kind" />
+    <result property="version" column="version" />
+    <result property="attributes" column="attributes"/>
+    <result property="created" column="created"/>
+    <result property="lastUpdated" column="last_updated"/>
+  </resultMap>
+
+  <resultMap id="AssetBlobResult" type="AssetBlobData">
+    <id property="assetBlobId" column="asset_blob_id"/>
+    <result property="blobRef" column="blob_ref" />
+    <result property="blobSize" column="blob_size" />
+    <result property="contentType" column="content_type" />
+    <result property="checksums" column="checksums" />
+    <result property="blobCreated" column="blob_created" />
+    <result property="createdBy" column="created_by" />
+    <result property="createdByIp" column="created_by_ip" />
   </resultMap>
 
   <select id="fetchComponent" resultType="ComponentData">
@@ -95,6 +132,21 @@
         <if test="kind != null"> AND kind = #{kind}</if>
         <if test="filter != null"> AND (${filter})</if>
     ORDER BY asset_id LIMIT #{limit};
+  </select>
+
+  <select id="browseEagerAssetsInRepository" resultMap="assetResultMap">
+    WITH assetIds as (
+      SELECT asset_id
+      FROM ${format}_asset
+      WHERE repository_id = #{repositoryId}
+      <if test="continuationToken != null">AND asset_id > #{continuationToken}</if>
+      ORDER BY asset_id
+      LIMIT #{limit})
+    SELECT A.*, C.*, B.* FROM ${format}_asset as A
+                         INNER JOIN ${format}_component C ON C.component_id = A.component_id
+                         INNER JOIN ${format}_asset_blob B ON B.asset_blob_id = A.asset_blob_id
+    where A.asset_id in (SELECT asset_id FROM assetIds)
+    ORDER BY A.asset_id
   </select>
 
   <select id="browseAssetsInRepositories" resultMap="assetResult">
@@ -120,6 +172,28 @@
             USING (component_id) WHERE <include refid="componentCoordinateMatch"/>;
       </otherwise>
     </choose>
+  </select>
+
+  <sql id="regexExpressions">
+    <foreach collection="regexExpressions" item="regexExpression" open="AND (" close=")" separator=" OR ">
+      path ~ #{regexExpression}
+    </foreach>
+  </sql>
+
+  <select id="findGreaterThanOrEqualToBlobCreated" resultType="org.sonatype.nexus.repository.content.store.AssetInfoData">
+    SELECT * FROM ${format}_asset a INNER JOIN ${format}_asset_blob ab USING (asset_blob_id)
+    WHERE a.repository_id = #{repositoryId}
+    <if test="blobCreated != null"> AND ab.blob_created >= #{blobCreated}</if>
+    <include refid="regexExpressions"/>
+    ORDER BY ab.blob_created LIMIT #{limit}
+  </select>
+
+  <select id="findBlobCreatedWithinRange" resultType="org.sonatype.nexus.repository.content.store.AssetInfoData">
+    SELECT * FROM ${format}_asset a INNER JOIN ${format}_asset_blob ab USING (asset_blob_id)
+    WHERE a.repository_id = #{repositoryId}
+    AND ab.blob_created >= #{startBlobCreated} AND ab.blob_created &lt; #{endBlobCreated}
+    <include refid="regexExpressions"/>
+    ORDER BY ab.blob_created LIMIT #{limit}
   </select>
 
   <insert id="createAsset" useGeneratedKeys="true" keyProperty="assetId" parameterType="AssetData">
@@ -152,6 +226,18 @@
   <select id="findByBlobRef" resultMap="assetResult">
     SELECT A.* FROM ${format}_asset A INNER JOIN ${format}_asset_blob B USING (asset_blob_id)
     WHERE repository_id = #{repositoryId} AND blob_ref = #{blobRef};
+  </select>
+
+  <select id="findByComponentIds" resultType="org.sonatype.nexus.repository.content.store.AssetInfoData" parameterType="java.util.Set">
+    SELECT *
+    FROM ${format}_asset A
+    INNER JOIN ${format}_asset_blob USING (asset_blob_id)
+    <where>
+      <foreach collection="componentIds" item="componentId" index="index" open="component_id IN (" close=")" separator=",">
+        #{componentId}
+      </foreach>
+    </where>
+    ORDER BY asset_id
   </select>
 
   <update id="updateAssetKind" parameterType="AssetData">

@@ -12,6 +12,9 @@
  */
 package org.apache.shiro.nexus;
 
+import javax.inject.Inject;
+import javax.inject.Named;
+
 import org.sonatype.nexus.security.anonymous.AnonymousHelper;
 
 import org.apache.shiro.mgt.SessionStorageEvaluator;
@@ -26,11 +29,18 @@ import org.apache.shiro.web.mgt.DefaultWebSessionStorageEvaluator;
 public class NexusSessionStorageEvaluator
   extends DefaultWebSessionStorageEvaluator
 {
+  @Inject
+  @Named("${nexus.session.enabled:-true}")
+  private boolean sessionsEnabled;
+
   /**
    * Disable storage for anonymous subject.
    */
   @Override
   public boolean isSessionStorageEnabled(final Subject subject) {
-    return !AnonymousHelper.isAnonymous(subject) && super.isSessionStorageEnabled(subject);
+    if (sessionsEnabled) {
+       return !AnonymousHelper.isAnonymous(subject) && super.isSessionStorageEnabled(subject);
+    }
+    return false;
   }
 }

@@ -15,7 +15,9 @@ package org.sonatype.nexus.repository.proxy;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.time.Duration;
 import java.util.Map;
+import java.util.Optional;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -23,14 +25,15 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.validation.constraints.NotNull;
 
-import org.sonatype.goodies.common.Time;
+import org.sonatype.nexus.common.cooperation2.Cooperation2;
+import org.sonatype.nexus.common.cooperation2.Cooperation2Factory;
 import org.sonatype.nexus.common.io.Cooperation;
-import org.sonatype.nexus.common.io.CooperationFactory;
 import org.sonatype.nexus.repository.BadRequestException;
 import org.sonatype.nexus.repository.ETagHeaderUtils;
 import org.sonatype.nexus.repository.FacetSupport;
 import org.sonatype.nexus.repository.InvalidContentException;
 import org.sonatype.nexus.repository.MissingBlobException;
+import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.cache.CacheController;
 import org.sonatype.nexus.repository.cache.CacheControllerHolder;
 import org.sonatype.nexus.repository.cache.CacheInfo;
@@ -85,7 +88,8 @@ public abstract class ProxyFacetSupport
   static final String CONFIG_KEY = "proxy";
 
   @VisibleForTesting
-  public static class Config
+  public static class ProxyConfig
+      implements ProxyRepositoryConfiguration
   {
     @Url
     @NotNull
@@ -95,13 +99,37 @@ public abstract class ProxyFacetSupport
      * Content max-age minutes.
      */
     @NotNull
-    public Integer contentMaxAge = Time.hours(24).toMinutesI();
+    public Integer contentMaxAge = (int) Duration.ofHours(24).toMinutes();
 
     /**
      * Metadata max-age minutes.
      */
     @NotNull
-    public Integer metadataMaxAge = Time.hours(24).toMinutesI();
+    public Integer metadataMaxAge = (int) Duration.ofHours(24).toMinutes();
+
+    /**
+     * Content max-age.
+     */
+    @Override
+    public Duration getContentMaxAge() {
+      return Duration.ofMinutes(contentMaxAge);
+    }
+
+    /**
+     * Metadata max-age.
+     */
+    @Override
+    public Duration getMetadataMaxAge() {
+      return Duration.ofMinutes(metadataMaxAge);
+    }
+
+    /**
+     * The remote URI of the proxy repository.
+     */
+    @Override
+    public URI getRemoteURL() {
+      return remoteUrl;
+    }
 
     @Override
     public String toString() {
@@ -114,7 +142,7 @@ public abstract class ProxyFacetSupport
 
   private static final ThreadLocal<Boolean> downloading = new ThreadLocal<>();
 
-  private Config config;
+  private ProxyConfig config;
 
   private HttpClientFacet httpClient;
 
@@ -122,11 +150,14 @@ public abstract class ProxyFacetSupport
 
   protected CacheControllerHolder cacheControllerHolder;
 
-  @Nullable
-  private CooperationFactory.Builder cooperationBuilder;
+  private Cooperation2Factory.Builder cooperationBuilder;
 
-  @Nullable
-  private Cooperation proxyCooperation;
+  private Cooperation2 proxyCooperation;
+
+  @Override
+  public ProxyRepositoryConfiguration getConfiguration() {
+    return config;
+  }
 
   /**
    * Configures content {@link Cooperation} for this proxy; a timeout of 0 means wait indefinitely.
@@ -140,45 +171,49 @@ public abstract class ProxyFacetSupport
    */
   @Inject
   protected void configureCooperation(
-      final CooperationFactory cooperationFactory,
+      final Cooperation2Factory cooperationFactory,
       @Named("${nexus.proxy.cooperation.enabled:-true}") final boolean cooperationEnabled,
-      @Named("${nexus.proxy.cooperation.majorTimeout:-0s}") final Time majorTimeout,
-      @Named("${nexus.proxy.cooperation.minorTimeout:-30s}") final Time minorTimeout,
+      @Named("${nexus.proxy.cooperation.majorTimeout:-0s}") final Duration majorTimeout,
+      @Named("${nexus.proxy.cooperation.minorTimeout:-30s}") final Duration minorTimeout,
       @Named("${nexus.proxy.cooperation.threadsPerKey:-100}") final int threadsPerKey)
   {
-    if (cooperationEnabled) {
       this.cooperationBuilder = cooperationFactory.configure()
+          .enabled(cooperationEnabled)
           .majorTimeout(majorTimeout)
           .minorTimeout(minorTimeout)
           .threadsPerKey(threadsPerKey);
-    }
   }
 
   @VisibleForTesting
   void buildCooperation() {
+    buildCooperation(getRepository());
+  }
+
+  @VisibleForTesting
+  public void buildCooperation(final Repository repository) {
     if (cooperationBuilder != null) {
-      this.proxyCooperation = cooperationBuilder.build(getRepository().getName() + ":proxy");
+      this.proxyCooperation = cooperationBuilder.build(repository.getName() + ":proxy");
     }
   }
 
   @Override
   protected void doInit(final Configuration configuration) throws Exception {
     super.doInit(configuration);
-    buildCooperation();
+    buildCooperation(getRepository());
   }
 
   @Override
   protected void doValidate(final Configuration configuration) throws Exception {
-    facet(ConfigurationFacet.class).validateSection(configuration, CONFIG_KEY, Config.class);
+    facet(ConfigurationFacet.class).validateSection(configuration, CONFIG_KEY, ProxyConfig.class);
   }
 
   @Override
   protected void doConfigure(final Configuration configuration) throws Exception {
-    config = facet(ConfigurationFacet.class).readSection(configuration, CONFIG_KEY, Config.class);
+    config = facet(ConfigurationFacet.class).readSection(configuration, CONFIG_KEY, ProxyConfig.class);
 
     cacheControllerHolder = new CacheControllerHolder(
-        new CacheController(Time.minutes(config.contentMaxAge).toSecondsI(), null),
-        new CacheController(Time.minutes(config.metadataMaxAge).toSecondsI(), null)
+        new CacheController((int) config.getContentMaxAge().getSeconds(), null),
+        new CacheController((int) config.getMetadataMaxAge().getSeconds(), null)
     );
 
     // normalize URL path to contain trailing slash
@@ -232,9 +267,11 @@ public abstract class ProxyFacetSupport
   @Override
   public Content get(final Context context) throws IOException {
     checkNotNull(context);
+    getEventManager().post(new ProxyRequestEvent(getRepository().getFormat().getValue()));
 
     Content content = maybeGetCachedContent(context);
     if (!isStale(context, content)) {
+      getEventManager().post(new ProxyCacheHitEvent(getRepository().getFormat().getValue()));
       return content;
     }
     return get(context, content);
@@ -244,21 +281,16 @@ public abstract class ProxyFacetSupport
    * Attempt to retrieve from the remote using proxy co-operation
    */
   protected Content get(final Context context, @Nullable final Content staleContent) throws IOException {
-    if (proxyCooperation == null) {
-      return doGet(context, staleContent);
-    }
-
-    return proxyCooperation.cooperate(getRequestKey(context), failover -> {
-      Content latestContent = staleContent;
-      if (failover) {
-        // re-check cache when failing over to new thread
-        latestContent = proxyCooperation.join(() -> maybeGetCachedContent(context));
-        if (!isStale(context, latestContent)) {
-          return latestContent;
-        }
-      }
-      return doGet(context, latestContent);
-    });
+    return proxyCooperation.on(() -> doGet(context, staleContent))
+        .checkFunction(() -> {
+          Content latestContent = maybeGetCachedContent(context);
+          if (!isStale(context, latestContent)) {
+            getEventManager().post(new ProxyCacheHitEvent(getRepository().getFormat().getValue()));
+            return Optional.of(latestContent);
+          }
+          return Optional.empty();
+        })
+        .cooperate(getRequestKey(context));
   }
 
   /**
@@ -284,7 +316,7 @@ public abstract class ProxyFacetSupport
       remote = fetch(context, content);
       if (remote != null) {
         content = store(context, remote);
-        if (proxyCooperation != null && remote.equals(content)) {
+        if (remote.equals(content)) {
           // remote wasn't stored; make reusable copy for cooperation
           content = new TempContent(remote);
         }
@@ -307,7 +339,6 @@ public abstract class ProxyFacetSupport
         Closeables.close(remote, true);
       }
     }
-
     return content;
   }
 
@@ -379,7 +410,7 @@ public abstract class ProxyFacetSupport
     cacheControllerHolder.invalidateCaches();
   }
 
-  private Content maybeGetCachedContent(Context context) throws IOException {
+  private Content maybeGetCachedContent(final Context context) throws IOException {
     try {
       return getCachedContent(context);
     }
@@ -413,11 +444,11 @@ public abstract class ProxyFacetSupport
   protected abstract Content store(final Context context, final Content content) throws IOException;
 
   @Nullable
-  protected Content fetch(final Context context, Content stale) throws IOException {
+  protected Content fetch(final Context context, final Content stale) throws IOException {
     return fetch(getUrl(context), context, stale);
   }
 
-  protected Content fetch(String url, Context context, @Nullable Content stale) throws IOException {
+  protected Content fetch(final String url, final Context context, @Nullable final Content stale) throws IOException {
     HttpClient client = httpClient.getHttpClient();
 
     checkState(config.remoteUrl.isAbsolute(),
@@ -492,8 +523,7 @@ public abstract class ProxyFacetSupport
   /**
    * Create {@link Content} out of HTTP response.
    */
-  protected Content createContent(final Context context, final HttpResponse response)
-  {
+  protected Content createContent(final Context context, final HttpResponse response) {
     return new Content(new HttpEntityPayload(response, response.getEntity()));
   }
 
@@ -525,15 +555,14 @@ public abstract class ProxyFacetSupport
    * Execute http client request.
    */
   protected HttpResponse execute(final Context context, final HttpClient client, final HttpRequestBase request)
-      throws IOException
-  {
+      throws IOException {
     return client.execute(request);
   }
 
   /**
    * Builds the {@link HttpRequestBase} for a particular set of parameters (mapping to GET by default).
    */
-  protected HttpRequestBase buildFetchHttpRequest(URI uri, Context context) {
+  protected HttpRequestBase buildFetchHttpRequest(final URI uri, final Context context) {
     return new HttpGet(uri);
   }
 

@@ -20,6 +20,8 @@ import javax.inject.Singleton;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.rest.SearchMapping;
 import org.sonatype.nexus.repository.rest.SearchMappings;
+import org.sonatype.nexus.repository.rest.sql.ComponentSearchField;
+import org.sonatype.nexus.repository.rest.sql.RepositorySearchField;
 
 import com.google.common.collect.ImmutableList;
 
@@ -35,13 +37,22 @@ public class DefaultSearchMappings
     extends ComponentSupport
     implements SearchMappings
 {
+  public static final String NAME_RAW = "name.raw";
+
+  public static final String GROUP_RAW = "group.raw";
+
+  public static final String VERSION = "version";
+
+  public static final String SEARCH_REPOSITORY_NAME = "search_repository_name";
+
   private static final List<SearchMapping> MAPPINGS = ImmutableList.of(
       new SearchMapping("q", "keyword", "Query by keyword"),
-      new SearchMapping("repository", REPOSITORY_NAME, "Repository name"),
-      new SearchMapping("format", "format", "Query by format"),
-      new SearchMapping("group", "group.raw", "Component group"),
-      new SearchMapping("name", "name.raw", "Component name"),
-      new SearchMapping("version", "version", "Component version"),
+      new SearchMapping("repository", REPOSITORY_NAME, "Repository name",
+          new RepositorySearchField(SEARCH_REPOSITORY_NAME)),
+      new SearchMapping("format", "format", "Query by format", ComponentSearchField.FORMAT),
+      new SearchMapping("group", GROUP_RAW, "Component group", ComponentSearchField.NAMESPACE),
+      new SearchMapping("name", NAME_RAW, "Component name", ComponentSearchField.NAME),
+      new SearchMapping(VERSION, VERSION, "Component version", ComponentSearchField.VERSION),
       new SearchMapping("md5", "assets.attributes.checksum.md5", "Specific MD5 hash of component's asset"),
       new SearchMapping("sha1", "assets.attributes.checksum.sha1", "Specific SHA-1 hash of component's asset"),
       new SearchMapping("sha256", "assets.attributes.checksum.sha256", "Specific SHA-256 hash of component's asset"),

@@ -19,15 +19,23 @@ import UIStrings from "../constants/UIStrings";
 const EMAIL_REGEX = /^(")?(?:[^\."])(?:(?:[\.])?(?:[\w\-!#$%&'*+/=?^_`{|}~]))*\1@(\w[\-\w]*\.?){1,5}([A-Za-z]){1,60}$/;
 const NAME_REGEX = /^[a-zA-Z0-9\-]{1}[a-zA-Z0-9_\-\.]*$/;
 const URI_REGEX = /^[a-z]*:.+$/i;
-const URL_REGEX = /^https?:\/\/[^"<>^`{|}]+$/i;
 const SECURE_URL_REGEX = /^https:\/\/[^"<>^`{|}]+$/i;
+const URL_HOSTNAME_REGEX = /^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$/i;
+const URL_PATHNAME_REGEX = /^([\S]*\S)?$/i;
+const RFC_1123_HOST_REGEX = new RegExp(
+    "^(((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))|" +
+    "(\\[(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\\])|" +
+    "(\\[((?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?)::((?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?)\\])|" +
+    "(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]*[a-zA-Z0-9])\\.)*([A-Za-z0-9]|" +
+    "[A-Za-z0-9][A-Za-z0-9\\-]*[A-Za-z0-9]))(:([0-9]+))?$"
+);
 
 /**
  * @since 3.31
  */
 export default class ValidationUtils {
   /**
-   * @param {string|null|undefined}
+   * @param str {string|null|undefined}
    * @return {boolean} true if the string is blank, null, or undefined
    */
   static isBlank(str) {
@@ -35,7 +43,7 @@ export default class ValidationUtils {
   }
 
   /**
-   * @param {string|null|undefined}
+   * @param str {string|null|undefined}
    * @return {boolean} true if the string is not blank, null, or undefined
    */
   static notBlank(str) {
@@ -43,7 +51,7 @@ export default class ValidationUtils {
   }
 
   /**
-   * @param {string|null|undefined}
+   * @param str {string|null|undefined}
    * @return {boolean} true if the string appears to be a valid uri
    */
   static isUri(str) {
@@ -51,7 +59,7 @@ export default class ValidationUtils {
   }
 
   /**
-   * @param {string}
+   * @param str {string}
    * @return {boolean} true if the string does not appear to be a valid uri
    */
   static notUri(str) {
@@ -59,15 +67,40 @@ export default class ValidationUtils {
   }
 
   /**
-   * @param {str|null|undefined}
+   * @param str {string|null|undefined}
    * @returns {boolean} true if the string appears to be a valid url (http/https)
    */
   static isUrl(str) {
-    return str && URL_REGEX.test(str);
+    let url;
+
+    try {
+      url = new URL(str);
+    } catch (_) {
+      return false;
+    }
+
+    // Need to extract hostname manually because URL object has encoded hostname
+    // that cannot be decoded to original form.
+    // For exampel 'http://fo£o.bar' encodes to 'xn--foo-cea.bar'.
+    const matches = str.match(/^https?:\/\/([^:/?#]+)/i);
+    const hostname = matches && matches[1];
+
+    // Port is checked by URL function itself, except 0.
+    const {protocol, pathname, port} = url;
+
+    const isProtocolValid = protocol === 'http:' || protocol === 'https:';
+
+    const isHostnameValid = hostname && URL_HOSTNAME_REGEX.test(hostname);
+
+    const isPortValid = port !== '0';
+
+    const isPathnameValid = URL_PATHNAME_REGEX.test(decodeURIComponent(pathname));
+
+    return isProtocolValid && isHostnameValid && isPortValid && isPathnameValid;
   }
 
   /**
-   * @param {str|null|undefined}
+   * @param str {string|null|undefined}
    * @returns {boolean} true if the string does not appear to be a valid url (http/https)
    */
   static notUrl(str) {
@@ -75,7 +108,7 @@ export default class ValidationUtils {
   }
 
   /**
-   * @param {str|null|undefined}
+   * @param str {string|null|undefined}
    * @returns {boolean} true if the str is an https url
    */
   static isSecureUrl(str) {
@@ -83,7 +116,7 @@ export default class ValidationUtils {
   }
 
   /**
-   * @param {str|null|undefined}
+   * @param str {string|null|undefined}
    * @returns {boolean} true if the string does not appear to be a valid secure url (https)
    */
   static notSecureUrl(str) {
@@ -91,11 +124,18 @@ export default class ValidationUtils {
   }
 
   /**
+   * @param value {string|null|undefined}
+   * @returns {boolean} true if the value is a valid hostname
+   */
+  static isHost(value) {
+    return value && RFC_1123_HOST_REGEX.test(value);
+  }
+
+  /**
    * @param value {string|number|null|undefined}
-   * @param min - defaults to -Infinity
-   * @param max - defaults to Infinity
-   * @return null if the string is null, undefined, or blank
-   * @return {string|null} a string error message if the number falls outside of the provided boundaries, null otherwise
+   * @param min - minimum allowed value, defaults to -Infinity
+   * @param max - maximum allowed value, defaults to Infinity
+   * @return {string|null} a string error message if the number falls outside of the range; null if the string is blank or within the boundaries
    */
   static isInRange({value, min = -Infinity, max = Infinity, allowDecimals = true}) {
     if (value === null || value === undefined) {
@@ -128,9 +168,17 @@ export default class ValidationUtils {
 
   static validateLength(value, length) {
     if (value.length > length) {
-      return UIStrings.ERROR.MAX_CHARS(255);
+      return UIStrings.ERROR.MAX_CHARS(length);
     }
     return null;
+  }
+
+  /**
+   * @param value
+   * @returns {string|null} an error string if name does not meet the requirements
+   */
+  static validateNameField(value) {
+    return this.validateNotBlank(value) || this.validateLength(value, 255) || this.validateName(value);
   }
 
   /**
@@ -138,7 +186,7 @@ export default class ValidationUtils {
    * @returns {string|null} an error string if name fails {@link ValidationUtils.isName} or null
    */
   static validateName(value) {
-    if (!ValidationUtils.isName(value)) {
+    if (!this.isName(value)) {
       return UIStrings.ERROR.INVALID_NAME_CHARS;
     }
     return null;
@@ -147,6 +195,12 @@ export default class ValidationUtils {
   static validateNotBlank(value) {
     if (ValidationUtils.isBlank(value)) {
       return UIStrings.ERROR.FIELD_REQUIRED;
+    }
+  }
+
+  static validateHost(value) {
+    if (!ValidationUtils.isHost(value)) {
+      return UIStrings.ERROR.HOSTNAME;
     }
   }
 
@@ -159,6 +213,12 @@ export default class ValidationUtils {
   static validateIsUrl(value) {
     if (ValidationUtils.notUrl(value)) {
       return UIStrings.ERROR.URL_ERROR;
+    }
+  }
+
+  static validateLeadingOrTrailingSpace(value) {
+    if (/^\s/.test(value) || /\s$/.test(value)) {
+      return UIStrings.ERROR.TRIM_ERROR;
     }
   }
 
@@ -179,14 +239,10 @@ export default class ValidationUtils {
     return str && EMAIL_REGEX.test(str);
   }
 
-  static validateEmail(field) {
-    if (ValidationUtils.isBlank(field)) {
-      return UIStrings.ERROR.FIELD_REQUIRED;
-    }
-    else if (!ValidationUtils.isEmail(field)) {
+  static validateEmail(value) {
+    if (!ValidationUtils.isEmail(value)) {
       return UIStrings.ERROR.INVALID_EMAIL;
     }
-    return null;
   }
 
   /**
@@ -210,5 +266,17 @@ export default class ValidationUtils {
         return this.isInvalid(error);
       }
     }));
+  }
+
+  /**
+   * Checks if two passwords match
+   * @param password
+   * @param passwordConfirmation
+   * @returns {string|null} UIStrings.ERROR.PASSWORD_NO_MATCH_ERROR if the two values differ
+   */
+  static validatePasswordsMatch(password, passwordConfirmation) {
+    if (password !== passwordConfirmation) {
+      return UIStrings.ERROR.PASSWORD_NO_MATCH_ERROR;
+    }
   }
 }

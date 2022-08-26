@@ -12,8 +12,10 @@
  */
 package org.sonatype.nexus.repository.maven.internal.orient;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -46,7 +48,6 @@ import org.sonatype.nexus.repository.maven.VersionPolicy;
 import org.sonatype.nexus.repository.maven.internal.Attributes.AssetKind;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.maven.internal.MavenModels;
-import org.sonatype.nexus.repository.maven.internal.hosted.metadata.MetadataRebuilder;
 import org.sonatype.nexus.repository.maven.internal.hosted.metadata.MetadataUtils;
 import org.sonatype.nexus.repository.maven.internal.validation.MavenMetadataContentValidator;
 import org.sonatype.nexus.repository.storage.Asset;
@@ -73,6 +74,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Sets;
 import com.google.common.hash.HashCode;
 import com.orientechnologies.common.concur.lock.OModificationOperationProhibitedException;
+import org.apache.commons.io.IOUtils;
 import org.apache.maven.artifact.repository.metadata.Metadata;
 import org.apache.maven.model.Model;
 import org.joda.time.DateTime;
@@ -82,7 +84,6 @@ import static java.lang.Boolean.TRUE;
 import static java.util.Collections.emptySet;
 import static java.util.Collections.singletonList;
 import static org.apache.commons.lang3.StringUtils.isNotEmpty;
-import static org.sonatype.nexus.repository.maven.internal.Attributes.AssetKind.REPOSITORY_METADATA;
 import static org.sonatype.nexus.repository.maven.internal.Attributes.P_ARTIFACT_ID;
 import static org.sonatype.nexus.repository.maven.internal.Attributes.P_BASE_VERSION;
 import static org.sonatype.nexus.repository.maven.internal.Attributes.P_CLASSIFIER;
@@ -92,6 +93,7 @@ import static org.sonatype.nexus.repository.maven.internal.Attributes.P_PACKAGIN
 import static org.sonatype.nexus.repository.maven.internal.Attributes.P_POM_DESCRIPTION;
 import static org.sonatype.nexus.repository.maven.internal.Attributes.P_POM_NAME;
 import static org.sonatype.nexus.repository.maven.internal.Attributes.P_VERSION;
+import static org.sonatype.nexus.repository.maven.internal.Attributes.AssetKind.REPOSITORY_METADATA;
 import static org.sonatype.nexus.repository.maven.internal.Constants.METADATA_FILENAME;
 import static org.sonatype.nexus.repository.maven.internal.orient.MavenFacetUtils.deleteWithHashes;
 import static org.sonatype.nexus.repository.maven.internal.orient.MavenFacetUtils.findAsset;
@@ -164,14 +166,14 @@ public class MavenFacetImpl
 
   private final boolean mavenMetadataValidationEnabled;
 
-  private final MetadataRebuilder metadataRebuilder;
+  private final OrientMetadataRebuilder metadataRebuilder;
 
   @Inject
   public MavenFacetImpl(final Map<String, MavenPathParser> mavenPathParsers,
                         final MavenMetadataContentValidator metadataValidator,
                         @Named("${nexus.maven.metadata.validation.enabled:-true}")
                         final boolean mavenMetadataValidationEnabled,
-                        MetadataRebuilder metadataRebuilder)
+                        final OrientMetadataRebuilder metadataRebuilder)
   {
     this.mavenPathParsers = checkNotNull(mavenPathParsers);
     this.metadataValidator = checkNotNull(metadataValidator);
@@ -262,6 +264,7 @@ public class MavenFacetImpl
       }
     }
 
+    logGAMetadataBlobIfDebug(path, blob, "Retrieved GA metadata");
     return toContent(asset, blob);
   }
 
@@ -369,7 +372,10 @@ public class MavenFacetImpl
       contentAttributes = ((Content) payload).getAttributes();
     }
 
-    return doPutAssetBlob(path, contentAttributes, tx, assetBlob);
+    logGAMetadataBlobStorageAttempt(path);
+    Content content = doPutAssetBlob(path, contentAttributes, tx, assetBlob);
+    logGAMetadataBlobIfDebug(path, assetBlob.getBlob(), "PUT GA metadata.");
+    return content;
   }
 
   @TransactionalStoreBlob
@@ -585,6 +591,19 @@ public class MavenFacetImpl
     return deletedPaths;
   }
 
+  public Set<String> deleteAssetOnly(final MavenPath... paths) throws IOException {
+    final StorageTx tx = UnitOfWork.currentTx();
+
+    Set<String> deletedPaths = Sets.newHashSet();
+    for (MavenPath path : paths) {
+      log.trace("DELETE ASSET ONLY {} : {}", getRepository().getName(), path.getPath());
+      if (deleteFile(path, tx, false)) {
+        deletedPaths.add(path.getPath());
+      }
+    }
+    return deletedPaths;
+  }
+
   private boolean deleteFileOrArtifact(final StorageTx tx, final MavenPath mavenPath) {
     if (mavenPath.getCoordinates() != null) {
       return deleteArtifact(mavenPath, tx);
@@ -644,11 +663,15 @@ public class MavenFacetImpl
   }
 
   private boolean deleteFile(final MavenPath path, final StorageTx tx) {
+    return deleteFile(path, tx, true);
+  }
+
+  private boolean deleteFile(final MavenPath path, final StorageTx tx, boolean deleteBlob) {
     final Asset asset = findAsset(tx, tx.findBucket(getRepository()), path);
     if (asset == null) {
       return false;
     }
-    tx.deleteAsset(asset);
+    tx.deleteAsset(asset, deleteBlob);
     return true;
   }
 
@@ -675,5 +698,32 @@ public class MavenFacetImpl
           contentAttributes.get(AssetEntityAdapter.P_CREATED_BY_IP, String.class));
     }
     return headers.isEmpty() ? null : headers;
+  }
+
+  private void logGAMetadataBlobStorageAttempt(final MavenPath path) {
+    final String thePath = path.getPath();
+    if (isGAMetadata(path, thePath)) {
+      log.debug("Attempting to store GA metadata for {} ", thePath);
+    }
+  }
+
+  private void logGAMetadataBlobIfDebug(final MavenPath mavenPath, final Blob blob, final String message) {
+    final String path = mavenPath.getPath();
+    if (log.isDebugEnabled() && isGAMetadata(mavenPath, path)) {
+      try (InputStream in = blob.getInputStream()) {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        IOUtils.copy(in, out);
+        log.debug("{} Blob id {}, Path {}, content = {}", message, blob.getId().asUniqueString(), path,
+            new String(out.toByteArray(), StandardCharsets.UTF_8));
+      }
+      catch (IOException e) {
+        log.error("Unable to log metadata blob.", e);
+      }
+    }
+  }
+
+  private boolean isGAMetadata(final MavenPath path, final String thePath) {
+    return path.getFileName().equals(METADATA_FILENAME)
+        && !thePath.endsWith("-SNAPSHOT/maven-metadata.xml");
   }
 }

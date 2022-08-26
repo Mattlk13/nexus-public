@@ -13,8 +13,8 @@
 import React from 'react';
 import {useMachine, useService} from '@xstate/react';
 
+import {FormUtils} from '@sonatype/nexus-ui-plugin';
 import {
-  FormUtils,
   NxButton,
   NxErrorAlert,
   NxFieldset,
@@ -23,13 +23,12 @@ import {
   NxSuccessAlert,
   NxTextInput,
   NxRadio
-} from '@sonatype/nexus-ui-plugin';
+} from '@sonatype/react-shared-components';
 
 import AzureBlobStoreSettingsMachine from './AzureBlobStoreSettingsMachine';
 import UIStrings from '../../../../../constants/UIStrings';
 
 const AZURE = UIStrings.BLOB_STORES.AZURE;
-const NO_AUTH = 'NO_AUTH';
 
 export default function AzureBlobStoreSettings({service}) {
   const [current, send] = useService(service);
@@ -91,20 +90,11 @@ export default function AzureBlobStoreSettings({service}) {
   }
 
   function handleAuthenticationMethodChange(value) {
-    if (value === NO_AUTH) {
-      send({
-        type: 'UPDATE',
-        name: 'bucketConfiguration.authentication',
-        value: null
-      });
-    }
-    else {
-      send({
-        type: 'UPDATE',
-        name: 'bucketConfiguration.authentication.authenticationMethod',
-        value
-      });
-    }
+    send({
+      type: 'UPDATE',
+      name: 'bucketConfiguration.authentication.authenticationMethod',
+      value
+    });
 
     sendAzureEvent({
       type: 'UPDATE_AUTH_METHOD',
@@ -128,10 +118,10 @@ export default function AzureBlobStoreSettings({service}) {
           <NxRadio
               radioId="useEnvironmentVariables"
               name="bucketConfiguration.authentication.authenticationMethod"
-              value={NO_AUTH}
-              isChecked={bucketConfiguration.authentication?.authenticationMethod === null}
+              value="ENVIRONMENTVARIABLE"
+              isChecked={bucketConfiguration.authentication?.authenticationMethod === 'ENVIRONMENTVARIABLE'}
               onChange={handleAuthenticationMethodChange}>
-            {AZURE.AUTHENTICATION.NO_AUTH}
+            {AZURE.AUTHENTICATION.ENVIRONMENTVARIABLE}
           </NxRadio>
           <NxRadio
               radioId="useManagedIdentity"

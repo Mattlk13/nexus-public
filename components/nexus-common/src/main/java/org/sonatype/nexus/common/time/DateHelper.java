@@ -14,6 +14,7 @@ package org.sonatype.nexus.common.time;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Date;
@@ -81,6 +82,10 @@ public class DateHelper
     return Instant.ofEpochMilli(dateTime.getMillis()).atOffset(ZoneOffset.UTC);
   }
 
+  public static OffsetDateTime toOffsetDateTime(final Date date) {
+    return Instant.ofEpochMilli(date.getTime()).atOffset(ZoneOffset.UTC);
+  }
+
   /**
    * @since 3.24
    */
@@ -93,5 +98,33 @@ public class DateHelper
    */
   public static org.joda.time.Duration toJodaDuration(final Duration javaDuration) {
     return org.joda.time.Duration.millis(javaDuration.toMillis());
+  }
+
+  /**
+   * Converts the Date to a LocalDate (a date, without time). The returned LocalDate will represent the Date of the
+   * provided value without any timezone offset.
+   *
+   * @since 3.38
+   */
+  public static LocalDate toLocalDate(@Nullable final Date date) {
+    if (date == null) {
+      return null;
+    }
+
+    org.joda.time.LocalDate jodaDate = new org.joda.time.LocalDate(date);
+    return LocalDate.of(jodaDate.getYear(), jodaDate.getMonthOfYear(), jodaDate.getDayOfMonth());
+  }
+
+  /**
+   * Converts the Date to a LocalDate (a date, without time). The returned LocalDate will represent the Date of the
+   * provided value in UTC.
+   *
+   * @since 3.38
+   */
+  public static Date atStartOfDay(@Nullable final LocalDate date) {
+    if (date == null) {
+      return null;
+    }
+    return Date.from(date.atStartOfDay(ZoneOffset.UTC).toInstant());
   }
 }

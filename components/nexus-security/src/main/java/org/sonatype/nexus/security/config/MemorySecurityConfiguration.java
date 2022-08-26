@@ -14,9 +14,14 @@ package org.sonatype.nexus.security.config;
 
 import java.io.Serializable;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
+import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 
 import org.sonatype.nexus.security.config.memory.MemoryCPrivilege;
 import org.sonatype.nexus.security.config.memory.MemoryCRole;
@@ -30,6 +35,7 @@ import org.sonatype.nexus.security.user.UserNotFoundException;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Maps;
+import org.apache.shiro.util.CollectionUtils;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
@@ -198,6 +204,27 @@ public class MemorySecurityConfiguration
     return privileges.get(id);
   }
 
+  @Nullable
+  @Override
+  public CPrivilege getPrivilegeByName(final String name) {
+    return Optional.ofNullable(name)
+        .flatMap(n -> privileges.values().stream().filter(p -> p.getName().equals(n))
+            .findFirst())
+        .orElse(null);
+  }
+
+  @Override
+  public List<CPrivilege> getPrivileges(final Set<String> ids) {
+    if (CollectionUtils.isEmpty(ids)) {
+      return Collections.emptyList();
+    }
+
+    return ids.stream()
+        .map(privileges::get)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toList());
+  }
+
   @Override
   public CPrivilege addPrivilege(final CPrivilege privilege) {
     checkNotNull(privilege);
@@ -225,9 +252,23 @@ public class MemorySecurityConfiguration
   }
 
   @Override
+  public void updatePrivilegeByName(final CPrivilege privilege) {
+    updatePrivilege(privilege);
+  }
+
+  @Override
   public boolean removePrivilege(final String id) {
     checkNotNull(id);
     return privileges.remove(id) != null;
+  }
+
+  @Override
+  public boolean removePrivilegeByName(final String name) {
+    return Optional.ofNullable(name)
+        .map(this::getPrivilegeByName)
+        .map(CPrivilege::getId)
+        .map(this::removePrivilege)
+        .orElse(false);
   }
 
   @Override

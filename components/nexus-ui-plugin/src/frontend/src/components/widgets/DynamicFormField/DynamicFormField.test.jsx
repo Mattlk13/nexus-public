@@ -38,7 +38,7 @@ describe('DynamicFormField', () => {
         attributes: {}
       }}/>);
 
-      expect(container).toMatchSnapshot();
+      expect(container.querySelector('input[type=text]')).toBeInTheDocument();
     });
 
     it('renders a long field', () => {
@@ -47,7 +47,7 @@ describe('DynamicFormField', () => {
         attributes: {long: true}
       }}/>);
 
-      expect(container).toMatchSnapshot();
+      expect(container.querySelector('.nx-text-input--long')).toBeInTheDocument();
     });
 
     it('renders a disabled field', () => {
@@ -71,14 +71,21 @@ describe('DynamicFormField', () => {
     });
 
     it('renders a MultiSelect field', () => {
-      const {container} = render(<DynamicFormField {...makeContext('test', ['a'])} dynamicProps={{
+      const options = ['transfer-list-option-1', 'transfer-list-option-2'];
+      const dynamicProps = {
         type: 'itemselect',
         attributes: {
-          options: ['a', 'b']
+          options
         }
-      }}/>);
+      }
+      const {container} = render(<DynamicFormField
+         {...makeContext('test', [])} dynamicProps={dynamicProps}
+        />);
 
-      expect(container).toMatchSnapshot();
+      expect(screen.getByText('Available Items')).toBeInTheDocument();  
+      expect(screen.getByText('Transferred Items')).toBeInTheDocument(); 
+      expect(screen.getByLabelText(options[0])).toBeInTheDocument();
+      expect(screen.getByLabelText(options[1])).toBeInTheDocument();
     });
 
     it('renders a Select field', () => {
@@ -89,7 +96,9 @@ describe('DynamicFormField', () => {
         }
       }}/>);
 
-      expect(container).toMatchSnapshot();
+      expect(container.querySelector('.nx-form-select')).toBeInTheDocument();
+      expect(container.querySelector('option[value=a]')).toBeInTheDocument();
+      expect(container.querySelector('option[value=b]')).toBeInTheDocument();
     });
 
     function makeContext(id, value) {

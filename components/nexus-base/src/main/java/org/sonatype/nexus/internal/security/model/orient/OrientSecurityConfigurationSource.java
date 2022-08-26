@@ -12,11 +12,13 @@
  */
 package org.sonatype.nexus.internal.security.model.orient;
 
+import java.util.Collections;
 import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
-
+import javax.annotation.Nullable;
 import javax.annotation.Priority;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -44,6 +46,7 @@ import com.google.common.collect.ImmutableList;
 import com.orientechnologies.orient.core.db.document.ODatabaseDocumentTx;
 import com.orientechnologies.orient.core.exception.OConcurrentModificationException;
 import com.orientechnologies.orient.core.storage.ORecordDuplicatedException;
+import org.apache.shiro.util.CollectionUtils;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -310,6 +313,26 @@ public class OrientSecurityConfigurationSource
       return inTx(databaseInstance).call(db -> privilegeEntityAdapter.read(db, id));
     }
 
+    @Nullable
+    @Override
+    public CPrivilege getPrivilegeByName(final String name) {
+      log.trace("Retrieving privilege by name {}" , name);
+
+      return Optional.ofNullable(name)
+          .map(n -> inTx(databaseInstance).call( db -> privilegeEntityAdapter.readByName(db , n)))
+          .orElse(null);
+    }
+
+    @Override
+    public List<CPrivilege> getPrivileges(final Set<String> ids) {
+      if (CollectionUtils.isEmpty(ids)) {
+        return Collections.emptyList();
+      }
+      log.trace("Retrieving privileges {}", ids);
+
+      return inTxRetry(databaseInstance).call(db -> ImmutableList.copyOf(privilegeEntityAdapter.read(db, ids)));
+    }
+
     @Override
     public CPrivilege addPrivilege(final CPrivilege privilege) {
       checkNotNull(privilege);
@@ -348,6 +371,31 @@ public class OrientSecurityConfigurationSource
     }
 
     @Override
+    public void updatePrivilegeByName(final CPrivilege privilege) {
+      checkNotNull(privilege);
+      checkNotNull(privilege.getName());
+      checkPrivilege(privilege);
+
+      log.trace("Updating privilege by name: {}", privilege.getName());
+
+      try {
+        inTxRetry(databaseInstance).run(db -> {
+          boolean exists = Optional.ofNullable(privilegeEntityAdapter.readByName(db, privilege.getName()))
+              .isPresent();
+
+          if(!exists){
+            throw new NoSuchPrivilegeException(privilege.getName());
+          }
+
+          privilegeEntityAdapter.updateByName(db, (OrientCPrivilege) privilege);
+        });
+      }
+      catch (OConcurrentModificationException e) {
+        throw concurrentlyModified("Privilege", privilege.getName(), e);
+      }
+    }
+
+    @Override
     public boolean removePrivilege(final String id) {
       checkNotNull(id);
       log.trace("Removing privilege: {}", id);
@@ -363,6 +411,27 @@ public class OrientSecurityConfigurationSource
       }
       catch (OConcurrentModificationException e) {
         throw concurrentlyModified("Privilege", id, e);
+      }
+    }
+
+    @Override
+    public boolean removePrivilegeByName(final String name) {
+      checkNotNull(name);
+      log.trace("Removing privilege by name: {}", name);
+
+      try {
+        return inTxRetry(databaseInstance).call(db -> {
+          boolean exists = Optional.ofNullable(privilegeEntityAdapter.readByName(db, name))
+              .isPresent();
+
+          if(!exists){
+            throw new NoSuchPrivilegeException(name);
+          }
+          return privilegeEntityAdapter.deleteByName(db, name);
+        });
+      }
+      catch (OConcurrentModificationException e) {
+        throw concurrentlyModified("Privilege", name, e);
       }
     }
 

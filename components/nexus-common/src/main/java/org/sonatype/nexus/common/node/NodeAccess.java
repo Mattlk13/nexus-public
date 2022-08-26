@@ -12,7 +12,6 @@
  */
 package org.sonatype.nexus.common.node;
 
-import java.security.cert.Certificate;
 import java.util.Map;
 import java.util.Set;
 
@@ -20,24 +19,12 @@ import org.sonatype.goodies.lifecycle.Lifecycle;
 
 /**
  * Provides access to node details.
- * 
+ *
  * @since 3.1
  */
 public interface NodeAccess
     extends Lifecycle
 {
-  /**
-   * Returns the local-node certificate.
-   */
-  Certificate getCertificate();
-
-  /**
-   * Returns the local-node fingerprint.
-   *
-   * This is the SHA1 of the certificate.
-   */
-  String getFingerprint();
-
   /**
    * Returns the local-node identifier.
    * <p/>
@@ -47,6 +34,11 @@ public interface NodeAccess
    * <pre>05F4743F-A7565846-43FDF9D0-577BE4FB-079289C6</pre>
    */
   String getId();
+
+  /**
+   * Retrieve the cluster id, implementations may simply return the ID if they do not support it.
+   */
+  String getClusterId();
 
   /**
    * Returns true if the node is clustered.

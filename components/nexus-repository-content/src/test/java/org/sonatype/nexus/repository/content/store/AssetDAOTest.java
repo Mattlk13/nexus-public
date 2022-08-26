@@ -14,22 +14,29 @@ package org.sonatype.nexus.repository.content.store;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.sonatype.nexus.common.entity.Continuation;
+import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.common.time.UTC;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.datastore.api.DuplicateKeyException;
 import org.sonatype.nexus.repository.content.Asset;
+import org.sonatype.nexus.repository.content.AssetBlob;
+import org.sonatype.nexus.repository.content.AssetInfo;
 import org.sonatype.nexus.repository.content.store.example.TestAssetBlobDAO;
 import org.sonatype.nexus.repository.content.store.example.TestAssetDAO;
 import org.sonatype.nexus.repository.content.store.example.TestAssetData;
 import org.sonatype.nexus.repository.content.store.example.TestComponentDAO;
 import org.sonatype.nexus.repository.content.store.example.TestContentRepositoryDAO;
 
+import com.google.common.collect.ImmutableList;
 import org.hamcrest.collection.IsIterableContainingInAnyOrder;
 import org.hamcrest.collection.IsIterableContainingInOrder;
 import org.junit.Before;
@@ -42,6 +49,7 @@ import static java.util.Arrays.stream;
 import static java.util.Collections.emptyMap;
 import static java.util.stream.Collectors.summingInt;
 import static java.util.stream.Collectors.toList;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.emptyIterable;
@@ -50,7 +58,6 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.Assert.assertFalse;
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
@@ -865,6 +872,29 @@ public class AssetDAOTest
   }
 
   @Test
+  public void testBrowseEagerAssetsInRepository() {
+    generateConfiguration();
+    EntityId entityId = generatedConfigurations().get(0).getRepositoryId();
+    generateSingleRepository(UUID.fromString(entityId.getValue()));
+    repositoryId = generatedRepositories().get(0).repositoryId;
+
+    // create 5 components with assets and blobs
+    generateContent(5);
+
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      AssetDAO dao = session.access(TestAssetDAO.class);
+
+      Continuation<Asset> assets = dao.browseEagerAssetsInRepository(repositoryId, null, 10);
+      assertThat(assets.size(), is(5));
+      // each asset should contain a blob and should belong to a component
+      for (Asset asset : assets) {
+        assertThat(asset.component().isPresent(), is(true));
+        assertThat(asset.blob().isPresent(), is(true));
+      }
+    }
+  }
+
+  @Test
   public void testSetLastDownloaded() {
     AssetData asset1 = randomAsset(repositoryId);
 
@@ -947,6 +977,141 @@ public class AssetDAOTest
     }
   }
 
+  @Test
+  public void testFindByComponentIds() {
+    generateConfiguration();
+    EntityId repositoryId = generatedConfigurations().get(0).getRepositoryId();
+    generateSingleRepository(UUID.fromString(repositoryId.getValue()));
+    generateContent(2);
+
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestAssetDAO dao = session.access(TestAssetDAO.class);
+      Collection<AssetInfo> assets = dao.findByComponentIds(Collections.singleton(1));
+
+      Optional<AssetInfo> assetOpt = assets.stream().findFirst();
+      assertThat(assetOpt.isPresent(), is(true));
+      AssetInfo asset = assetOpt.get();
+
+      Asset generatedAsset = generatedAssets().get(0);
+      AssetBlob generatedAssetBlob = generatedAssetBlobs().get(0);
+
+      assertThat(asset.path(), is(generatedAsset.path()));
+      assertThat(asset.contentType(), is(generatedAssetBlob.contentType()));
+      assertThat(asset.lastUpdated(), notNullValue());
+      assertThat(asset.checksums(), notNullValue());
+    }
+  }
+
+  @Test
+  public void testFindBlobCreated() {
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      AssetDAO dao = session.access(TestAssetDAO.class);
+      AssetBlobDAO blobDao = session.access(TestAssetBlobDAO.class);
+      OffsetDateTime baseTime = OffsetDateTime.of(2022, 4, 24, 15, 18, 22,
+          111111000, ZoneOffset.UTC);
+      Collection<AssetInfo> found = dao.findBlobCreatedWithinRange(repositoryId, baseTime,
+          baseTime.plus(1, ChronoUnit.MILLIS), ImmutableList.of(), 100);
+      assertThat(found, emptyIterable());
+      found = dao.findGreaterThanOrEqualToBlobCreated(repositoryId, baseTime, ImmutableList.of(), 10);
+      assertThat(found, emptyIterable());
+
+      AssetData asset1 = generateAsset(repositoryId, "/asset1/asset1.jar");
+      AssetData asset2 = generateAsset(repositoryId, "/asset2/asset2.jar");
+      AssetData asset3 = generateAsset(repositoryId, "/asset3/asset3.jar");
+      AssetData asset4 = generateAsset(repositoryId, "/asset4/asset4.jar");
+      AssetData asset5 = generateAsset(repositoryId, "/asset5/asset5.jar");
+      AssetData asset6 = generateAsset(repositoryId, "/asset6/asset6.jar");
+
+      AssetBlobData assetBlob1 = randomAssetBlob();
+      AssetBlobData assetBlob2 = randomAssetBlob();
+      AssetBlobData assetBlob3 = randomAssetBlob();
+      AssetBlobData assetBlob4 = randomAssetBlob();
+      AssetBlobData assetBlob5 = randomAssetBlob();
+      AssetBlobData assetBlob6 = randomAssetBlob();
+
+      assetBlob1.setBlobCreated(baseTime);
+      assetBlob2.setBlobCreated(baseTime);
+      assetBlob3.setBlobCreated(baseTime.plusSeconds(1));
+      assetBlob4.setBlobCreated(baseTime.plusSeconds(2));
+      assetBlob5.setBlobCreated(baseTime.minusSeconds(1));
+      assetBlob6.setBlobCreated(baseTime.minusSeconds(3));
+
+      createAssetBlobs(blobDao, assetBlob1, assetBlob2, assetBlob3, assetBlob4, assetBlob5, assetBlob6);
+      asset1.setAssetBlob(assetBlob1);
+      asset2.setAssetBlob(assetBlob2);
+      asset3.setAssetBlob(assetBlob3);
+      asset4.setAssetBlob(assetBlob4);
+      asset5.setAssetBlob(assetBlob5);
+      asset6.setAssetBlob(assetBlob6);
+
+      createAssets(dao, asset1, asset2, asset3, asset4, asset5, asset6);
+
+      found = dao.findBlobCreatedWithinRange(repositoryId, baseTime, baseTime.plus(1, ChronoUnit.MILLIS), ImmutableList.of(),100);
+      assertThat(found.size(), is(2));
+
+      found = dao.findGreaterThanOrEqualToBlobCreated(repositoryId, baseTime, ImmutableList.of(),100);
+      assertThat(found.size(), is(4));
+
+      found = dao.findGreaterThanOrEqualToBlobCreated(repositoryId, baseTime, ImmutableList.of(),1);
+      assertThat(found.size(), is(1));
+
+      found = dao.findGreaterThanOrEqualToBlobCreated(repositoryId, baseTime.minusDays(1), ImmutableList.of(".*/asset1/.*"), 100);
+      assertThat(found.size(), is(1));
+
+      found = dao.findGreaterThanOrEqualToBlobCreated(repositoryId, baseTime.minusDays(1), ImmutableList.of(".*/asset3/.*", ".*/asset5/.*"), 100);
+      assertThat(found.size(), is(2));
+
+      found = dao.findGreaterThanOrEqualToBlobCreated(repositoryId, baseTime.minusDays(1), ImmutableList.of(".*/asset.?/a.*\\.jar.*"), 100);
+      assertThat(found.size(), is(6));
+    }
+  }
+
+  @Test
+  public void testFindBlobCreatedTruncatesToMilliseconds() {
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      AssetDAO dao = session.access(TestAssetDAO.class);
+      AssetBlobDAO blobDao = session.access(TestAssetBlobDAO.class);
+      OffsetDateTime baseTime = OffsetDateTime.of(2022, 4, 24, 15, 18, 22,
+          111111000, ZoneOffset.UTC);
+      Collection<AssetInfo> found = dao.findBlobCreatedWithinRange(repositoryId, baseTime, baseTime.plus(1, ChronoUnit.MILLIS), ImmutableList.of(),100);
+      assertThat(found, emptyIterable());
+      found = dao.findGreaterThanOrEqualToBlobCreated(repositoryId, baseTime, ImmutableList.of(), 10);
+      assertThat(found, emptyIterable());
+
+      AssetData asset1 = generateAsset(repositoryId, "/asset1/asset1.jar");
+      AssetData asset2 = generateAsset(repositoryId, "/asset2/asset2.jar");
+      AssetData asset3 = generateAsset(repositoryId, "/asset3/asset3.jar");
+      AssetData asset4 = generateAsset(repositoryId, "/asset4/asset4.jar");
+
+      AssetBlobData assetBlob1 = randomAssetBlob();
+      AssetBlobData assetBlob2 = randomAssetBlob();
+      AssetBlobData assetBlob3 = randomAssetBlob();
+      AssetBlobData assetBlob4 = randomAssetBlob();
+
+      assetBlob1.setBlobCreated(baseTime);
+      assetBlob2.setBlobCreated(baseTime);
+      // Microsecond level time can be stored in both h2 and postgres. However, the last updated queries should truncate
+      // the time and treat these as identical to baseTime
+      assetBlob3.setBlobCreated(baseTime.plusNanos(5000));
+      assetBlob4.setBlobCreated(baseTime.plusNanos(8000));
+
+      createAssetBlobs(blobDao, assetBlob1, assetBlob2, assetBlob3, assetBlob4);
+
+      asset1.setAssetBlob(assetBlob1);
+      asset2.setAssetBlob(assetBlob2);
+      asset3.setAssetBlob(assetBlob3);
+      asset4.setAssetBlob(assetBlob4);
+
+      createAssets(dao, asset1, asset2, asset3, asset4);
+
+      found = dao.findBlobCreatedWithinRange(repositoryId, baseTime, baseTime.plus(1, ChronoUnit.MILLIS), ImmutableList.of(),100);
+      assertThat(found.size(), is(4));
+
+      found = dao.findGreaterThanOrEqualToBlobCreated(repositoryId, baseTime.plus(1, ChronoUnit.MILLIS).truncatedTo(ChronoUnit.MILLIS), ImmutableList.of(),100);
+      assertThat(found.size(), is(0));
+    }
+  }
+
   static int countAssets(final AssetDAO dao, final int repositoryId) {
     return dao.countAssets(repositoryId, null, null, null);
   }
@@ -958,5 +1123,17 @@ public class AssetDAOTest
                                           final String continuationToken)
   {
     return dao.browseAssets(repositoryId, limit, continuationToken, kind, null, null);
+  }
+
+  private void createAssets(final AssetDAO dao, final AssetData... assets) {
+    for (AssetData asset : assets) {
+      dao.createAsset(asset);
+    }
+  }
+
+  private void createAssetBlobs(final AssetBlobDAO dao, final AssetBlobData... assetBlobs) {
+    for (AssetBlobData assetBlob : assetBlobs) {
+      dao.createAssetBlob(assetBlob);
+    }
   }
 }

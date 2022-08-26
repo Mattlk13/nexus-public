@@ -13,11 +13,10 @@
 import React from 'react';
 import axios from 'axios';
 import {when} from 'jest-when';
-import {fireEvent, screen, waitFor, waitForElementToBeRemoved} from '@testing-library/react'
+import {fireEvent, screen, waitForElementToBeRemoved} from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/extend-expect';
-import TestUtils from '@sonatype/nexus-ui-plugin/src/frontend/src/interface/TestUtils';
-import {ExtJS} from '@sonatype/nexus-ui-plugin';
+import {TestUtils} from '@sonatype/nexus-ui-plugin';
 import S3BlobStoreSettings from './S3/S3BlobStoreSettings';
 import S3BlobStoreWarning from './S3/S3BlobStoreWarning';
 
@@ -40,6 +39,9 @@ jest.mock('@sonatype/nexus-ui-plugin', () => ({
     showErrorMessage: jest.fn()
   }
 }));
+
+jest.mock("swagger-ui-react", () => jest.fn());
+jest.mock("swagger-ui-react/swagger-ui.css", () => jest.fn());
 
 const blobstoreTypes = {
   data: [{
@@ -75,7 +77,7 @@ const blobstoreTypes = {
           "toTitle": "Selected",
           "fromTitle": "Available",
           "buttons": ["up", "add", "remove", "down"],
-          "options": ["default", "test", "test-promoted"]
+          "options": ["default", "test", "test-converted"]
         },
         "type": "itemselect",
         "allowAutocomplete": false
@@ -118,6 +120,8 @@ const selectors = {
 describe('BlobStoresForm', function() {
   const onDone = jest.fn();
   const confirm = Promise.resolve();
+  const SOFT_QUOTA_1_TERABYTE_IN_MEGABYTES = '1048576'; // 1 Terabyte = 1048576 Megabytes
+  const SOFT_QUOTA_1_TERABYTE_IN_BYTES = 1099511627776; // 1 Terabyte = 1048576 Megabytes = 1099511627776 bytes
 
   window.ReactComponents = {S3BlobStoreSettings, S3BlobStoreWarning};
 
@@ -141,14 +145,14 @@ describe('BlobStoresForm', function() {
           endpointURL: () => getByLabelText('Endpoint URL'),
           signatureVersion: () => getByLabelText('Signature Version'),
           usePathStyle: () => getByLabelText('Use path-style access'),
-          availableMembers: () => queryByLabelText('Available'),
-          selectedMembers: () => queryByLabelText('Selected'),
+          availableMembers: () => getByRole('group', {name: 'Available Items'}),
+          selectedMembers: () => getByRole('group', {name: 'Transferred Items'}),
           softQuota: () => getByLabelText('Soft Quota'),
           softQuotaType: () => queryByLabelText('Constraint Type'),
           softQuotaLimit: () => queryByLabelText('Constraint Limit (in MB)'),
           saveButton: () => getByText('Save'),
           cancelButton: () => getByText('Cancel'),
-          promoteToGroup: () => queryByText('Promote to Group')
+          convertToGroup: () => queryByText('Convert to Group')
         }));
   }
 
@@ -181,7 +185,7 @@ describe('BlobStoresForm', function() {
     when(axios.get).calledWith('/service/rest/internal/ui/blobstores/types').mockResolvedValue(blobstoreTypes);
     when(axios.get).calledWith('/service/rest/internal/ui/blobstores/quotaTypes').mockResolvedValue(quotaTypes);
 
-    const {container, loadingMask, typeSelect} = render();
+    const {loadingMask, typeSelect} = render();
 
     await waitForElementToBeRemoved(loadingMask);
 
@@ -193,7 +197,7 @@ describe('BlobStoresForm', function() {
     when(axios.get).calledWith('/service/rest/internal/ui/blobstores/types').mockResolvedValue(blobstoreTypes);
     when(axios.get).calledWith('/service/rest/internal/ui/blobstores/quotaTypes').mockResolvedValue(quotaTypes);
 
-    const {container, loadingMask, typeSelect} = render();
+    const {loadingMask, typeSelect} = render();
 
     await waitForElementToBeRemoved(loadingMask);
 
@@ -315,7 +319,7 @@ describe('BlobStoresForm', function() {
     when(axios.get).calledWith('/service/rest/internal/ui/blobstores/types').mockResolvedValue(blobstoreTypes);
     when(axios.get).calledWith('/service/rest/internal/ui/blobstores/quotaTypes').mockResolvedValue(quotaTypes);
 
-    const {loadingMask, typeSelect, softQuota, softQuotaType, softQuotaLimit, getByText} = render();
+    const {loadingMask, typeSelect, softQuota, softQuotaType, softQuotaLimit} = render();
 
     await waitForElementToBeRemoved(loadingMask);
 
@@ -390,8 +394,8 @@ describe('BlobStoresForm', function() {
     userEvent.click(softQuota());
     userEvent.selectOptions(softQuotaType(), 'spaceRemainingQuota');
     expect(softQuotaType()).toHaveValue('spaceRemainingQuota');
-    userEvent.type(softQuotaLimit(), '100');
-    expect(softQuotaLimit()).toHaveValue('100');
+    userEvent.type(softQuotaLimit(), SOFT_QUOTA_1_TERABYTE_IN_MEGABYTES);
+    expect(softQuotaLimit()).toHaveValue(SOFT_QUOTA_1_TERABYTE_IN_MEGABYTES);
     userEvent.click(saveButton());
 
     expect(axios.post).toHaveBeenCalledWith(
@@ -402,7 +406,7 @@ describe('BlobStoresForm', function() {
           softQuota: {
             enabled: true,
             type: 'spaceRemainingQuota',
-            limit: '100'
+            limit: SOFT_QUOTA_1_TERABYTE_IN_BYTES
           }
         }
     );
@@ -497,19 +501,19 @@ describe('BlobStoresForm', function() {
         path: 'testPath',
         softQuota: {
           type: 'spaceRemainingQuota',
-          limit: '100'
+          limit: SOFT_QUOTA_1_TERABYTE_IN_MEGABYTES
         }
       }
     });
 
     const {
       loadingMask,
-      promoteToGroup
+      convertToGroup
     } = render('file/test');
 
     await waitForElementToBeRemoved(loadingMask);
 
-    expect(promoteToGroup()).toBeInTheDocument();
+    expect(convertToGroup()).toBeInTheDocument();
   });
 
   it('edits an s3 blob store', async function() {
@@ -538,7 +542,7 @@ describe('BlobStoresForm', function() {
 
     const {
       loadingMask,
-      promoteToGroup,
+      convertToGroup,
       typeSelect,
       expiration,
       bucket,
@@ -563,7 +567,7 @@ describe('BlobStoresForm', function() {
     expect(secretAccessKey()).toHaveValue('SomeSecretAccessKey');
     expect(endpointURL()).toHaveValue('http://www.fakeurl.com');
 
-    expect(promoteToGroup()).toBeInTheDocument();
+    expect(convertToGroup()).toBeInTheDocument();
   });
 
   it('edits a file blob store', async function() {
@@ -574,7 +578,7 @@ describe('BlobStoresForm', function() {
         path: 'testPath',
         softQuota: {
           type: 'spaceRemainingQuota',
-          limit: '100'
+          limit: '104857600' // Bytes in 100 Megabytes
         }
       }
     });
@@ -612,7 +616,7 @@ describe('BlobStoresForm', function() {
     when(axios.get).calledWith('/service/rest/v1/blobstores/group/test').mockResolvedValue({
       data: {
         "softQuota" : null,
-        "members" : [ "test-promoted" ],
+        "members" : [ "test-converted" ],
         "fillPolicy" : "writeToFirst"
       }
     });
@@ -620,6 +624,7 @@ describe('BlobStoresForm', function() {
     const {
       availableMembers,
       getByText,
+      getByLabelText,
       loadingMask,
       name,
       selectedMembers,
@@ -635,61 +640,61 @@ describe('BlobStoresForm', function() {
     expect(typeSelect()).not.toBeInTheDocument();
     expect(name()).not.toBeInTheDocument();
 
-    expect(availableMembers()).toContainElement(getByText('default'));
-    expect(selectedMembers()).toContainElement(getByText('test-promoted'));
+    expect(availableMembers()).toContainElement(getByLabelText('default'));
+    expect(selectedMembers()).toContainElement(getByLabelText('test-converted'));
   });
 
-  it('promote to group is not shown when editing a group', async function() {
+  it('convert to group is not shown when editing a group', async function() {
     when(axios.get).calledWith('/service/rest/internal/ui/blobstores/types').mockResolvedValue(blobstoreTypes);
     when(axios.get).calledWith('/service/rest/internal/ui/blobstores/quotaTypes').mockResolvedValue(quotaTypes);
     when(axios.get).calledWith('/service/rest/v1/blobstores/group/test').mockResolvedValue({
       data: {
         "softQuota" : null,
-        "members" : [ "test-promoted" ],
+        "members" : [ "test-converted" ],
         "fillPolicy" : "writeToFirst"
       }
     });
 
     const {
       loadingMask,
-      promoteToGroup
+      convertToGroup
     } = render('group/test');
 
     await waitForElementToBeRemoved(loadingMask);
 
-    expect(promoteToGroup()).not.toBeInTheDocument();
+    expect(convertToGroup()).not.toBeInTheDocument();
   });
 
-  it('requests confirmation when promote is requested', async function() {
+  it('log save error message when blobstore can not be added to group', async function() {
     when(axios.get).calledWith('/service/rest/internal/ui/blobstores/types').mockResolvedValue(blobstoreTypes);
     when(axios.get).calledWith('/service/rest/internal/ui/blobstores/quotaTypes').mockResolvedValue(quotaTypes);
-    when(axios.get).calledWith('/service/rest/v1/blobstores/file/test').mockResolvedValue({
+
+    let updateUrl = '/service/rest/v1/blobstores/group/test';
+
+    when(axios.get).calledWith(updateUrl).mockResolvedValue({
       data: {
-        path: 'testPath',
-        softQuota: {
-          type: 'spaceRemainingQuota',
-          limit: '100'
-        }
+        "softQuota" : null,
+        "members" : [ "test-converted", "default" ],
+        "fillPolicy" : "writeToFirst"
       }
     });
 
-    const {
-      getByText,
-      loadingMask,
-      title,
-      promoteToGroup
-    } = render('file/test');
+    let errorMessage = 'Blob Store is not eligible to be a group member';
+
+    when(axios.put).calledWith(updateUrl, {}).mockRejectedValue({
+        response: {data: [{ "id": "*", "message": errorMessage}]}
+    });
+
+    const {loadingMask} = render('group/test');
 
     await waitForElementToBeRemoved(loadingMask);
 
-    expect(title()).toHaveTextContent('Edit test');
-    expect(getByText('File Blob Store')).toBeInTheDocument();
+    const consoleSpy = jest.spyOn(console, 'log');
 
-    expect(promoteToGroup()).toBeInTheDocument();
+    await axios.put(updateUrl, {}).catch(function(reason) {
+      console.log(reason.response.data[0].message);
+    });
 
-    ExtJS.requestConfirmation.mockReturnValue(confirm);
-    fireEvent.click(promoteToGroup());
-
-    await waitFor(() => expect(axios.post).toBeCalledWith('/service/rest/v1/blobstores/group/promote/test'));
+    expect(consoleSpy).toHaveBeenCalledWith(errorMessage);
   });
 });

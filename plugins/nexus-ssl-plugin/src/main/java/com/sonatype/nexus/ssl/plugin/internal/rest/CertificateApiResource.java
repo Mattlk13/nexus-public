@@ -23,6 +23,8 @@ import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.naming.InvalidNameException;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.DefaultValue;
@@ -36,8 +38,10 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
-import com.sonatype.nexus.ssl.plugin.PemCertificate;
-import com.sonatype.nexus.ssl.plugin.internal.CertificateRetriever;
+import org.sonatype.nexus.ssl.CertificateRetriever;
+import org.sonatype.nexus.ssl.ApiCertificate;
+import com.sonatype.nexus.ssl.plugin.validator.HostnameOrIpAddress;
+import com.sonatype.nexus.ssl.plugin.validator.PemCertificate;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rest.Resource;
@@ -52,8 +56,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotEmpty;
+
+import static org.sonatype.nexus.ssl.TrustStore.KEY_STORE_ERROR_MESSAGE;
 
 /**
  * @since 3.19
@@ -63,8 +67,6 @@ public class CertificateApiResource
     extends ComponentSupport
     implements Resource, CertificateApiResourceDoc
 {
-  private static final String KEY_STORE_ERROR_MESSAGE = "An error occurred accessing the trust store.";
-
   private static final String CERTIFICATE_MISSING_MESSAGE = "No certificate with alias '%s' in trust store.";
 
   private TrustStore trustStore;
@@ -84,7 +86,7 @@ public class CertificateApiResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:ssl-truststore:read")
   public ApiCertificate retrieveCertificate(
-      @NotNull @NotEmpty @QueryParam("host") final String host,
+      @NotNull @NotEmpty @HostnameOrIpAddress @QueryParam("host") final String host,
       @DefaultValue("443") @QueryParam("port") final Integer port,
       @QueryParam("protocolHint") final String protocolHint)
   {

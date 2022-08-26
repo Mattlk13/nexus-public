@@ -24,7 +24,7 @@ import org.sonatype.nexus.common.property.ImplicitSourcePropertiesFile;
  * @param <T> The metadata type for that cloud blob store e.g. <code>com.amazonaws.services.s3.model.ObjectMetadata</code>
  *            for AWS S3 BlobStore implementation.
  * @see CloudBlobStoreSupport
- * @since 3.35
+ * @since 3.37
  */
 public abstract class CloudBlobPropertiesSupport<T>
     extends ImplicitSourcePropertiesFile
@@ -39,7 +39,7 @@ public abstract class CloudBlobPropertiesSupport<T>
   public abstract T getMetadata();
 
   /**
-   * A ByteArrayOutputStream containing the blob properties to be written.
+   * A {@link ByteArrayOutputStream} containing the blob properties to be written.
    */
   public abstract ByteArrayOutputStream getData() throws IOException;
 

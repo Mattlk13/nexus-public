@@ -20,8 +20,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -35,16 +33,13 @@ import org.sonatype.nexus.repository.maven.MavenPath.HashType;
 import org.sonatype.nexus.repository.maven.MavenPathParser;
 import org.sonatype.nexus.repository.maven.internal.Constants;
 import org.sonatype.nexus.repository.maven.internal.DigestExtractor;
-import org.sonatype.nexus.repository.maven.internal.MavenModels;
 import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.Payload;
 import org.sonatype.nexus.repository.view.payloads.StringPayload;
 
 import com.google.common.collect.Sets;
 import com.google.common.hash.HashCode;
-import org.codehaus.plexus.util.xml.Xpp3Dom;
 
-import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Collections.emptySet;
 import static java.util.Objects.nonNull;
@@ -207,9 +202,14 @@ public abstract class AbstractMetadataRebuilder
       try {
         List<Map<String, Object>> gavs = browseGAVs();
 
+        log.debug("Beginning metadata rebuild for {} GAVs", gavs.size());
+
         if (!gavs.isEmpty() && nonNull(groupId)) {
+          log.debug("Rebuilding Group: {}", groupId);
+
           metadataBuilder.onEnterGroupId(groupId);
           if (nonNull(artifactId) && nonNull(baseVersion)) {
+            log.debug("Rebuilding Group: {} Artifact: {}", groupId, artifactId);
             rebuildMetadataInner(groupId, artifactId, emptySet(), failures);
           }
           rebuildMetadataExitGroup(groupId, failures);
@@ -220,6 +220,8 @@ public abstract class AbstractMetadataRebuilder
           final String groupId = (String) gav.get("groupId");
           final String artifactId = (String) gav.get("artifactId");
           final Set<String> baseVersions = (Set<String>) gav.get("baseVersions");
+
+          log.debug("Group: {} Artifact: {} Base versions: {}", groupId, artifactId, baseVersions);
 
           final boolean groupChange = !Objects.equals(currentGroupId, groupId);
           if (groupChange) {
@@ -260,9 +262,13 @@ public abstract class AbstractMetadataRebuilder
       try {
         List<Map<String, Object>> gavs = browseGAVs();
 
+        log.debug("Beginning metadata refresh for {} GAVs", gavs.size());
+
         if (!gavs.isEmpty() && nonNull(groupId)) {
+          log.debug("Refreshing Group: {}", groupId);
           metadataBuilder.onEnterGroupId(groupId);
           if (nonNull(artifactId) && nonNull(baseVersion)) {
+            log.debug("Refreshing Group: {} Artifact: {}", groupId, artifactId);
             refreshArtifact(groupId, artifactId, emptySet(), failures);
           }
           rebuildMetadataExitGroup(groupId, failures);
@@ -273,6 +279,8 @@ public abstract class AbstractMetadataRebuilder
           final String g = (String) gav.get("groupId");
           final String a = (String) gav.get("artifactId");
           final Set<String> bv = (Set<String>) gav.get("baseVersions");
+
+          log.debug("Group: {} Artifact: {} Base versions: {}",g, a, bv);
 
           final boolean groupChange = !Objects.equals(prevGroupId, g);
           if (groupChange) {
@@ -294,7 +302,7 @@ public abstract class AbstractMetadataRebuilder
       finally {
         maybeLogFailures(failures);
       }
-
+      log.debug("Finished metadata refresh. Rebuilt {}", rebuilt);
       return rebuilt;
     }
 
@@ -358,13 +366,14 @@ public abstract class AbstractMetadataRebuilder
 
     /**
      * Verifies and may fix/create the broken/non-existent Maven hashes (.sha1/.md5 files).
+     * @return true if the checksum was rebuilt
      */
-    protected void mayUpdateChecksum(final MavenPath mavenPath, final HashType hashType) {
+    protected boolean mayUpdateChecksum(final MavenPath mavenPath, final HashType hashType) {
       Optional<HashCode> checksum = getChecksum(mavenPath, hashType);
       if (!checksum.isPresent()) {
         // this means that an asset stored in maven repository lacks checksum required by maven repository (see maven facet)
         log.warn("Asset with path {} lacks checksum {}", mavenPath, hashType);
-        return;
+        return false;
       }
 
       String assetChecksum = checksum.get().toString();
@@ -375,7 +384,7 @@ public abstract class AbstractMetadataRebuilder
           try (InputStream is = content.openInputStream()) {
             final String mavenChecksum = DigestExtractor.extract(is);
             if (Objects.equals(assetChecksum, mavenChecksum)) {
-              return; // all is OK: exists and matches
+              return false; // all is OK: exists and matches
             }
           }
         }
@@ -394,72 +403,9 @@ public abstract class AbstractMetadataRebuilder
         log.warn("Error writing {}", checksumPath, e);
         throw new RuntimeException(e);
       }
+      return true;
     }
 
     protected abstract Optional<HashCode> getChecksum(final MavenPath mavenPath, final HashType hashType);
-
-    /**
-     * Parses the DOM of a XML.
-     */
-    protected Xpp3Dom parse(final MavenPath mavenPath, final InputStream is) {
-      try {
-        return MavenModels.parseDom(is);
-      }
-      catch (IOException e) {
-        log.warn("Could not parse POM: {} @ {}", repository.getName(), mavenPath.getPath(), e);
-        throw new RuntimeException(e);
-      }
-    }
-
-    /**
-     * Returns the plugin prefix of a Maven plugin, by opening up the plugin JAR, and reading the Maven Plugin
-     * Descriptor. If fails, falls back to mangle artifactId (ie. extract XXX from XXX-maven-plugin or
-     * maven-XXX-plugin).
-     */
-    protected String getPluginPrefix(final MavenPath mavenPath) {
-      // sanity checks: is artifact and extension is "jar", only possibility for maven plugins currently
-      checkArgument(mavenPath.getCoordinates() != null);
-      checkArgument(Objects.equals(mavenPath.getCoordinates().getExtension(), "jar"));
-      String prefix = null;
-      try {
-        final Content jarFile = get(mavenPath);
-        if (jarFile != null) {
-          try (ZipInputStream zip = new ZipInputStream(jarFile.openInputStream())) {
-            ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-              if (!entry.isDirectory() && "META-INF/maven/plugin.xml".equals(entry.getName())) {
-                final Xpp3Dom dom = parse(mavenPath, zip);
-                prefix = getChildValue(dom, "goalPrefix", null);
-                break;
-              }
-              zip.closeEntry();
-            }
-          }
-        }
-      }
-      catch (IOException e) {
-        log.warn("Unable to read plugin.xml of {}", mavenPath, e);
-      }
-      if (prefix != null) {
-        return prefix;
-      }
-      if ("maven-plugin-plugin".equals(mavenPath.getCoordinates().getArtifactId())) {
-        return "plugin";
-      }
-      else {
-        return mavenPath.getCoordinates().getArtifactId().replaceAll("-?maven-?", "").replaceAll("-?plugin-?", "");
-      }
-    }
-
-    /**
-     * Helper method to get node's immediate child or default.
-     */
-    protected String getChildValue(final Xpp3Dom doc, final String childName, final String defaultValue) {
-      Xpp3Dom child = doc.getChild(childName);
-      if (child == null) {
-        return defaultValue;
-      }
-      return child.getValue();
-    }
   }
 }

@@ -14,6 +14,8 @@ package org.sonatype.nexus.cleanup.internal.orient.search.elasticsearch;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.cleanup.internal.search.elasticsearch.LastBlobUpdatedCriteriaAppender;
@@ -26,7 +28,7 @@ import org.sonatype.nexus.common.entity.DetachedEntityId;
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.search.query.RepositoryQueryBuilder;
-import org.sonatype.nexus.repository.search.query.SearchQueryService;
+import org.sonatype.nexus.repository.search.query.ElasticSearchQueryService;
 import org.sonatype.nexus.repository.storage.Component;
 import org.sonatype.nexus.repository.storage.StorageTx;
 import org.sonatype.nexus.transaction.UnitOfWork;
@@ -49,7 +51,6 @@ import org.mockito.Mock;
 import static java.lang.Boolean.parseBoolean;
 import static java.lang.String.format;
 import static java.util.Collections.emptyMap;
-import static org.apache.commons.collections.IteratorUtils.toList;
 import static org.elasticsearch.index.query.QueryBuilders.boolQuery;
 import static org.elasticsearch.index.query.QueryBuilders.existsQuery;
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
@@ -59,8 +60,8 @@ import static org.elasticsearch.index.query.QueryBuilders.regexpQuery;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsEqual.equalTo;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -92,7 +93,7 @@ public class OrientElasticSearchCleanupComponentBrowseTest
   private SearchHit searchHit1, searchHit2;
 
   @Mock
-  private SearchQueryService searchQueryService;
+  private ElasticSearchQueryService elasticSearchQueryService;
 
   @Mock
   private StorageTx tx;
@@ -112,7 +113,7 @@ public class OrientElasticSearchCleanupComponentBrowseTest
         LAST_BLOB_UPDATED_KEY, new LastBlobUpdatedCriteriaAppender(),
         IS_PRERELEASE_KEY, new PrereleaseCriteriaAppender(),
         REGEX_KEY, new RegexCriteriaAppender()
-    ), searchQueryService, metricRegistry);
+    ), elasticSearchQueryService, metricRegistry);
 
     when(repository.getName()).thenReturn(REPO_NAME);
 
@@ -190,24 +191,24 @@ public class OrientElasticSearchCleanupComponentBrowseTest
     CleanupPolicy lastBlobUpdatedPolicy = new OrientCleanupPolicy();
     lastBlobUpdatedPolicy.setCriteria(criteria);
 
-    when(searchQueryService.browse(any())).thenReturn(ImmutableList.of(searchHit1, searchHit2));
+    when(elasticSearchQueryService.browse(any())).thenReturn(ImmutableList.of(searchHit1, searchHit2));
 
-    Iterable<EntityId> componentsIterable = underTest.browse(lastBlobUpdatedPolicy, repository);
+    Stream<EntityId> componentsIterable = underTest.browse(lastBlobUpdatedPolicy, repository);
 
     assertThat(componentsIterable.iterator().hasNext(), is(false));
 
-    verify(searchQueryService, never()).browse(any());
+    verify(elasticSearchQueryService, never()).browse(any());
   }
 
   private void assertComponentsReturned(final Map<String, String> criteria) {
     CleanupPolicy lastBlobUpdatedPolicy = new OrientCleanupPolicy();
     lastBlobUpdatedPolicy.setCriteria(criteria);
 
-    when(searchQueryService.browse(any())).thenReturn(ImmutableList.of(searchHit1, searchHit2));
+    when(elasticSearchQueryService.browse(any())).thenReturn(ImmutableList.of(searchHit1, searchHit2));
 
-    Iterable<EntityId> componentsIterable = underTest.browse(lastBlobUpdatedPolicy, repository);
+    Stream<EntityId> componentsIterable = underTest.browse(lastBlobUpdatedPolicy, repository);
 
-    List<EntityId> components = toList(componentsIterable.iterator());
+    List<EntityId> components = componentsIterable.collect(Collectors.toList());
 
     assertThat(components.get(0), is(equalTo(new DetachedEntityId(COMPONENT_ID_1))));
     assertThat(components.get(1), is(equalTo(new DetachedEntityId(COMPONENT_ID_2))));
@@ -215,7 +216,7 @@ public class OrientElasticSearchCleanupComponentBrowseTest
 
   private void assertQuery(final String key, final String expectedQuery) {
     ArgumentCaptor<QueryBuilder> queryBuilderCaptor = ArgumentCaptor.forClass(QueryBuilder.class);
-    verify(searchQueryService).browse(queryBuilderCaptor.capture());
+    verify(elasticSearchQueryService).browse(queryBuilderCaptor.capture());
 
     RepositoryQueryBuilder actualQuery = repositoryQuery(queryBuilderCaptor.getValue());
 

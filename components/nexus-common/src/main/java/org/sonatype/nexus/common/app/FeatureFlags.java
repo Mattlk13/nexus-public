@@ -31,6 +31,35 @@ public interface FeatureFlags
   String DATASTORE_DEVELOPER = "nexus.datastore.developer";
   String DATASTORE_DEVELOPER_NAMED = "${nexus.datastore.developer:-false}";
 
+  /* Distributed event service. Available values: true, false. Default value: false */
+  String DATASTORE_CLUSTERED_ENABLED = "nexus.datastore.clustered.enabled";
+  String DATASTORE_CLUSTERED_ENABLED_NAMED = "${nexus.datastore.clustered.enabled:-false}";
+
+  //Enable elastic search
+  String ELASTIC_SEARCH_ENABLED = "nexus.elasticsearch.enabled";
+
   /* Orient flag for marking content that is orient only, and should be disabled when datastore is enabled */
   String ORIENT_ENABLED = "nexus.orient.enabled";
+
+  /* JWT externalization. Available values: true, false. Default value: false */
+  String JWT_ENABLED = "nexus.jwt.enabled";
+
+  /* Session flag for marking content that is only for session, and should be disabled when jwt is enabled */
+  String SESSION_ENABLED = "nexus.session.enabled";
+
+  /* HTTP Replication. Available values: true, false. Default value: false */
+  String REPLICATION_HTTP_ENABLED = "nexus.replication.http.enabled";
+
+  /*  */
+  String DATASTORE_BLOBSTORE_METRICS = "nexus.datastore.blobstore.metrics.enabled";
+
+  /**
+   * Enable searching components via aggregated search table.
+   * Mutual exclusive with:
+   * - ELASTIC_SEARCH_ENABLED;
+   * Dependent from:
+   * - DATASTORE_DEVELOPER;
+   */
+  String DATASTORE_TABLE_SEARCH = "nexus.datastore.table.search.enabled";
+  String DATASTORE_TABLE_SEARCH_NAMED = "${nexus.datastore.table.search.enabled:-false}";
 }

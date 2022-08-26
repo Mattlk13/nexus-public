@@ -26,7 +26,7 @@ import org.mockito.Mock;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -69,6 +69,7 @@ public class OperationsTest
     order.verify(tx).reason(DEFAULT_REASON);
     order.verify(tx).begin();
     order.verify(tx).commit();
+    order.verify(tx).end();
     order.verify(session).close();
     verifyNoMoreInteractions(session, tx);
   }
@@ -97,6 +98,7 @@ public class OperationsTest
     order.verify(tx).allowRetry(any(IOException.class));
     order.verify(tx).begin();
     order.verify(tx).commit();
+    order.verify(tx).end();
     order.verify(session).close();
     verifyNoMoreInteractions(session, tx);
   }
@@ -122,6 +124,7 @@ public class OperationsTest
       order.verify(tx).begin();
       order.verify(tx).rollback();
       order.verify(tx).allowRetry(any(IOException.class));
+      order.verify(tx).end();
       order.verify(session).close();
       verifyNoMoreInteractions(session, tx);
     }
@@ -151,6 +154,7 @@ public class OperationsTest
     order.verify(tx).allowRetry(any(IOException.class));
     order.verify(tx).begin();
     order.verify(tx).commit();
+    order.verify(tx).end();
     order.verify(session).close();
     verifyNoMoreInteractions(session, tx);
   }

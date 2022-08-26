@@ -24,11 +24,11 @@ if not defined DOCKER_HOST (set docker="-Dno-docker=true")
 @REM The maven build defaults to using `npm ci`, force it to use `npm install` which is faster on dev machines
 if "%~1"=="-T" goto :customThreads
 
-call mvn clean install -DskipTests -Dnpm.build=build -T 1C %docker%
+call mvn clean install -Dclm.skip=true -DskipTests -Dnpm.build=build -T 1C %docker%
 goto :continue
 
 :customThreads
-call mvn clean install -DskipTests -Dnpm.build=build -T %~2 %docker%
+call mvn clean install -Dclm.skip=true -DskipTests -Dnpm.build=build -T %~2 %docker%
 
 :continue
 @REM Exit if maven did not build successfully
@@ -36,7 +36,7 @@ IF %ERRORLEVEL% NEQ 0 (
    EXIT /B %ERRORLEVEL%
 )
 
-call mvn dependency:properties process-test-resources -Dit -pl :functional-testsuite,:nexuspro-modern-testsuite,:nexuspro-fabric-testsuite
+call mvn dependency:properties process-test-resources -Dit -pl :functional-testsuite,:nexuspro-modern-testsuite,:nexuspro-fabric-testsuite,:nexuspro-sql-fabric-testsuite
 
 @REM Enable Debug mode
 set KARAF_DEBUG=true

@@ -25,7 +25,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.locks.Lock;
 import java.util.stream.Stream;
-
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -43,7 +42,11 @@ import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
+import org.sonatype.nexus.blobstore.api.OperationMetrics;
+import org.sonatype.nexus.blobstore.api.OperationType;
 import org.sonatype.nexus.blobstore.api.RawObjectAccess;
+import org.sonatype.nexus.blobstore.metrics.MonitoringBlobStoreMetrics;
+import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaUsageChecker;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 import org.sonatype.nexus.common.stateguard.Guarded;
 import org.sonatype.nexus.thread.NexusThreadFactory;
@@ -63,6 +66,7 @@ import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.SharedMetricRegistries;
 import com.codahale.metrics.Timer;
 import com.codahale.metrics.annotation.Timed;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableMap;
@@ -80,6 +84,8 @@ import static java.util.Collections.singletonList;
 import static java.util.concurrent.Executors.newFixedThreadPool;
 import static java.util.stream.StreamSupport.stream;
 import static org.sonatype.nexus.blobstore.DirectPathLocationStrategy.DIRECT_PATH_ROOT;
+import static org.sonatype.nexus.blobstore.api.OperationType.DOWNLOAD;
+import static org.sonatype.nexus.blobstore.api.OperationType.UPLOAD;
 import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStoreConfigurationHelper.getConfiguredExpirationInDays;
 import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStoreException.buildException;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.FAILED;
@@ -164,7 +170,9 @@ public class S3BlobStore
 
   private boolean preferAsyncCleanup;
 
-  private S3BlobStoreMetricsStore storeMetrics;
+  private S3BlobStoreMetricsService storeMetrics;
+
+  private BlobStoreQuotaUsageChecker blobStoreQuotaUsageChecker;
 
   private LoadingCache<BlobId, S3Blob> liveBlobs;
 
@@ -191,15 +199,17 @@ public class S3BlobStore
       @Named("${nexus.s3.preferExpire:-false}") final boolean preferExpire,
       @Named("${nexus.s3.forceHardDelete:-false}") final boolean forceHardDelete,
       @Named("${nexus.s3.preferAsyncCleanup:-true}") final boolean preferAsyncCleanup,
-      final S3BlobStoreMetricsStore storeMetrics,
+      final S3BlobStoreMetricsService storeMetrics,
       final DryRunPrefix dryRunPrefix,
-      final BucketManager bucketManager)
+      final BucketManager bucketManager,
+      final BlobStoreQuotaUsageChecker blobStoreQuotaUsageChecker)
   {
     super(blobIdLocationResolver, dryRunPrefix);
     this.amazonS3Factory = checkNotNull(amazonS3Factory);
     this.copier = checkNotNull(copier);
     this.uploader = checkNotNull(uploader);
     this.storeMetrics = checkNotNull(storeMetrics);
+    this.blobStoreQuotaUsageChecker = checkNotNull(blobStoreQuotaUsageChecker);
     this.bucketManager = checkNotNull(bucketManager);
     this.preferExpire = preferExpire;
 
@@ -235,6 +245,9 @@ public class S3BlobStore
     storeMetrics.setBlobStore(this);
     storeMetrics.start();
 
+    blobStoreQuotaUsageChecker.setBlobStore(this);
+    blobStoreQuotaUsageChecker.start();
+
     if (this.preferAsyncCleanup && executorService == null) {
       this.executorService = newFixedThreadPool(8,
           new NexusThreadFactory("s3-blobstore", "async-ops"));
@@ -249,6 +262,7 @@ public class S3BlobStore
       executorService = null;
     }
     storeMetrics.stop();
+    blobStoreQuotaUsageChecker.stop();
   }
 
   /**
@@ -282,6 +296,7 @@ public class S3BlobStore
 
   @Override
   @Timed
+  @MonitoringBlobStoreMetrics(operationType = UPLOAD)
   protected Blob doCreate(
       final InputStream blobData,
       final Map<String, String> headers,
@@ -399,6 +414,7 @@ public class S3BlobStore
   @Nullable
   @Override
   @Timed
+  @MonitoringBlobStoreMetrics(operationType = DOWNLOAD)
   public Blob get(final BlobId blobId, final boolean includeDeleted) {
     checkNotNull(blobId);
 
@@ -434,6 +450,9 @@ public class S3BlobStore
         blob.refresh(blobAttributes.getHeaders(), blobAttributes.getMetrics());
         return blob;
       }
+      else {
+        return blob;
+      }
     }
     catch (IOException e) {
       throw new BlobStoreException(e, blobId);
@@ -441,7 +460,6 @@ public class S3BlobStore
     finally {
       lock.unlock();
     }
-    return null;
   }
 
   @Override
@@ -587,6 +605,21 @@ public class S3BlobStore
   }
 
   @Override
+  public Map<OperationType, OperationMetrics> getOperationMetricsByType() {
+    return storeMetrics.getOperationMetrics();
+  }
+
+  @Override
+  public Map<OperationType, OperationMetrics> getOperationMetricsDelta() {
+    return storeMetrics.getOperationMetricsDelta();
+  }
+
+  @Override
+  public void clearOperationMetrics() {
+    storeMetrics.clearOperationMetrics();
+  }
+
+  @Override
   protected void doInit(final BlobStoreConfiguration configuration) {
     try {
       this.s3 = amazonS3Factory.create(configuration);
@@ -642,11 +675,13 @@ public class S3BlobStore
   @Guarded(by = {NEW, STOPPED, FAILED, SHUTDOWN})
   public void remove() {
     try {
+      storeMetrics.remove();
+
       boolean contentEmpty = s3.listObjects(getConfiguredBucket(), getContentPrefix()).getObjectSummaries().isEmpty();
       if (contentEmpty) {
         S3PropertiesFile metadata = new S3PropertiesFile(s3, getConfiguredBucket(), metadataFilePath());
         metadata.remove();
-        storeMetrics.remove();
+
         bucketManager.deleteStorageLocation(getBlobStoreConfiguration());
       }
       else {
@@ -725,9 +760,16 @@ public class S3BlobStore
   }
 
   private boolean isNotTempBlob(final S3ObjectSummary object) {
-    ObjectMetadata objectMetadata = s3.getObjectMetadata(getConfiguredBucket(), object.getKey());
-    Map<String, String> userMetadata = objectMetadata.getUserMetadata();
-    return !userMetadata.containsKey(TEMPORARY_BLOB_HEADER);
+    try {
+      ObjectMetadata objectMetadata = s3.getObjectMetadata(getConfiguredBucket(), object.getKey());
+      Map<String, String> userMetadata = objectMetadata.getUserMetadata();
+      return !userMetadata.containsKey(TEMPORARY_BLOB_HEADER);
+    }
+    catch (Exception e) {
+      // On occasion a blob might be deleted between our retrieving the summary and asking for the metadata
+      log.debug("An error occurred determining whether blob was temporary", e);
+      return false;
+    }
   }
 
   private Stream<BlobId> blobIdStream(final Stream<S3ObjectSummary> summaries) {
@@ -858,6 +900,12 @@ public class S3BlobStore
   @Override
   public RawObjectAccess getRawObjectAccess() {
     return rawObjectAccess;
+  }
+
+  @Override
+  @VisibleForTesting
+  public void flushMetrics() throws IOException {
+    storeMetrics.flush();
   }
 
   private S3BlobAttributes writeBlobAttributes(

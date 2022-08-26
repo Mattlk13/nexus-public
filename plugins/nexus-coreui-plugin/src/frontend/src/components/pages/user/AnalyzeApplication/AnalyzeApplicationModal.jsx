@@ -13,12 +13,14 @@
 import React from 'react';
 import PropTypes from "prop-types";
 import {faKey} from "@fortawesome/free-solid-svg-icons";
-import {FieldWrapper, NxButton, NxFontAwesomeIcon, NxLoadWrapper, Select, Textfield, Utils} from '@sonatype/nexus-ui-plugin';
+import {FieldWrapper, Select, Textfield, Utils} from '@sonatype/nexus-ui-plugin';
+import {NxButton, NxFontAwesomeIcon, NxLoadWrapper} from '@sonatype/react-shared-components';
 
 import UIStrings from '../../../../constants/UIStrings';
-import './AnalyzeApplicationModal.scss';
 import {useMachine} from "@xstate/react";
 import AnalyzeApplicationModalMachine from "./AnalyzeApplicationModalMachine";
+
+import './AnalyzeApplication.scss';
 
 export default function AnalyzeApplicationModal(props) {
   const [state, send] = useMachine(AnalyzeApplicationModalMachine, {
@@ -88,7 +90,7 @@ export default function AnalyzeApplicationModal(props) {
               descriptionText={UIStrings.ANALYZE_APPLICATION.PACKAGES.DESCRIPTION}
               isOptional>
             <Textfield {...Utils.fieldProps('packages', state)} onChange={handleUpdate}
-                       className='nx-text-input--long'/>
+                       className='nxrm-analyze-app-pkg-input'/>
           </FieldWrapper>
         </div>
 

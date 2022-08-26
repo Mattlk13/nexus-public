@@ -14,7 +14,7 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-import {assign, Machine} from 'xstate';
+import {assign} from 'xstate';
 import Axios from 'axios';
 import {ExtJS, FormUtils, ValidationUtils} from '@sonatype/nexus-ui-plugin';
 
@@ -36,9 +36,9 @@ const userAccountMachine = FormUtils.buildFormMachine({
 
     validate: assign({
       validationErrors: ({data}) => ({
-        firstName: ValidationUtils.isBlank(data.firstName) ? UIStrings.ERROR.FIELD_REQUIRED : null,
-        lastName: ValidationUtils.isBlank(data.lastName) ? UIStrings.ERROR.FIELD_REQUIRED : null,
-        email: ValidationUtils.validateEmail(data.email)
+        firstName: ValidationUtils.validateNotBlank(data.firstName),
+        lastName: ValidationUtils.validateNotBlank(data.lastName),
+        email: ValidationUtils.validateNotBlank(data.email) || ValidationUtils.validateEmail(data.email),
       })
     })
   },

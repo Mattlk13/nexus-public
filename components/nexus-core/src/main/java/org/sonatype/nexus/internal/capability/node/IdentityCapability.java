@@ -20,17 +20,19 @@ import javax.inject.Named;
 import org.sonatype.goodies.i18n.I18N;
 import org.sonatype.goodies.i18n.MessageBundle;
 import org.sonatype.nexus.capability.CapabilitySupport;
+import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.common.template.TemplateParameters;
-import org.sonatype.nexus.ssl.CertificateUtil;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
 
 /**
  * Capability for exposing identity details.
  *
  * @since 3.0
  */
+@FeatureFlag(name = DATASTORE_ENABLED)
 @Named(IdentityCapabilityDescriptor.TYPE_ID)
 public class IdentityCapability
     extends CapabilitySupport<IdentityCapabilityConfiguration>
@@ -72,9 +74,6 @@ public class IdentityCapability
   protected String renderStatus() throws Exception {
     return render(IdentityCapabilityDescriptor.TYPE_ID + "-status.vm", new TemplateParameters()
         .set("nodeId", nodeAccess.getId())
-        .set("fingerprint", nodeAccess.getFingerprint())
-        .set("pem", CertificateUtil.serializeCertificateInPEM(nodeAccess.getCertificate()))
-        .set("detail", nodeAccess.getCertificate().toString())
     );
   }
 }

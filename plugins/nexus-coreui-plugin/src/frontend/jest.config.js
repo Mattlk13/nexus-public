@@ -18,6 +18,9 @@
 // https://jestjs.io/docs/en/configuration.html
 
 module.exports = {
+  // Fix Memory problems with jest and workers on CircleCI (public) build
+  maxWorkers: 2,
+
   // All imported modules in your tests should be mocked automatically
   // automock: false,
 
@@ -95,8 +98,7 @@ module.exports = {
   // A map from regular expressions to module names that allow to stub out resources with a single module
   moduleNameMapper: {
     "\\.scss$": "<rootDir>/__jest__/styleMock.js",
-    "\\.png$": "<rootDir>/__jest__/styleMock.js",
-    "\\.svg": "<rootDir>/__jest__/styleMock.js"
+    "\\.(png|svg)$": "<rootDir>/__jest__/imgMock.js"
   },
 
   // An array of regexp pattern strings, matched against all module paths before considered 'visible' to the module loader

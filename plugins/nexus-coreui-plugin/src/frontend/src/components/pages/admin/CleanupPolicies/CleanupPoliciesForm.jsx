@@ -17,27 +17,27 @@ import {
   CheckboxControlledWrapper,
   ContentBody,
   FieldWrapper,
-  NxErrorAlert,
-  NxButton,
-  NxFontAwesomeIcon,
-  NxLoadWrapper,
-  NxSubmitMask,
-  NxTooltip,
   Page,
   PageHeader,
   PageTitle,
   Section,
-  SectionFooter,
   Select,
   Textfield,
-  Utils
+  Utils,
+  FormUtils,
 } from '@sonatype/nexus-ui-plugin';
 
+import {
+  NxForm,
+  NxButton,
+  NxFontAwesomeIcon,
+} from '@sonatype/react-shared-components';
+
 import CleanupPoliciesFormMachine from './CleanupPoliciesFormMachine';
+import CleanupPoliciesPreview from './CleanupPoliciesPreview';
 
 import UIStrings from '../../../../constants/UIStrings';
-import {faBroom, faTrash} from '@fortawesome/free-solid-svg-icons';
-import CleanupPoliciesPreview from './CleanupPoliciesPreview';
+import {faTrash} from '@fortawesome/free-solid-svg-icons';
 
 import './CleanupPolicies.scss';
 
@@ -82,41 +82,34 @@ export default function CleanupPoliciesForm({itemId, onDone}) {
 
   function setCriteriaLastBlobUpdatedEnabled(checked) {
     send({type: 'SET_CRITERIA_LAST_BLOB_UPDATED_ENABLED', checked: checked})
-    if (!checked && data.criteriaLastBlobUpdated) {
+    if (!checked && data.criteriaLastBlobUpdated != null) {
       send({type: 'UPDATE', data: {criteriaLastBlobUpdated: null}});
     }
   }
 
   function setCriteriaLastDownloadedEnabled(checked) {
     send({type: 'SET_CRITERIA_LAST_DOWNLOADED_ENABLED', checked: checked})
-    if (!checked && data.criteriaLastDownloaded) {
+    if (!checked && data.criteriaLastDownloaded != null) {
       send({type: 'UPDATE', data: {criteriaLastDownloaded: null}});
     }
   }
 
   function setCriteriaReleaseTypeEnabled(checked) {
     send({type: 'SET_CRITERIA_RELEASE_TYPE_ENABLED', checked: checked})
-    if (!checked && data.criteriaReleaseType) {
+    if (!checked && data.criteriaReleaseType != null) {
       send({type: 'UPDATE', data: {criteriaReleaseType: null}});
     }
   }
 
   function setCriteriaAssetRegexEnabled(checked) {
     send({type: 'SET_CRITERIA_ASSET_REGEX_ENABLED', checked: checked})
-    if (!checked && data.criteriaAssetRegex) {
+    if (!checked && data.criteriaAssetRegex != null) {
       send({type: 'UPDATE', data: {criteriaAssetRegex: null}});
     }
   }
 
-  function save(event) {
-    event.preventDefault();
+  function save() {
     send({type: 'SAVE'});
-  }
-
-  function handleEnter(event) {
-    if (event.key === 'Enter') {
-      save(event);
-    }
   }
 
   function retry() {
@@ -146,12 +139,26 @@ export default function CleanupPoliciesForm({itemId, onDone}) {
       <PageTitle text={isEdit ? UIStrings.CLEANUP_POLICIES.EDIT_TITLE : UIStrings.CLEANUP_POLICIES.CREATE_TITLE}/>
     </PageHeader>
     <ContentBody>
-      <Section className="nxrm-cleanup-policies-form" onKeyPress={handleEnter}>
-        <NxLoadWrapper loading={isLoading} error={loadError ? `${loadError}` : null} retryHandler={retry}>
+      <Section className="nxrm-cleanup-policies-form">
+        <NxForm
+            loading={isLoading}
+            loadError={loadError}
+            onCancel={cancel}
+            doLoad={retry}
+            onSubmit={save}
+            submitError={saveError}
+            submitMaskState={isSaving ? false : null}
+            submitBtnText={UIStrings.SETTINGS.SAVE_BUTTON_LABEL}
+            submitMaskMessage={UIStrings.SAVING}
+            validationErrors={FormUtils.saveTooltip({isPristine, isInvalid})}
+            additionalFooterBtns={itemId &&
+              <NxButton type="button" variant="tertiary" onClick={confirmDelete}>
+                <NxFontAwesomeIcon icon={faTrash}/>
+                <span>{UIStrings.SETTINGS.DELETE_BUTTON_LABEL}</span>
+              </NxButton>
+            }
+        >
           {hasData && <>
-            {saveError && <NxErrorAlert>{UIStrings.CLEANUP_POLICIES.MESSAGES.SAVE_ERROR}</NxErrorAlert>}
-            {isSaving && <NxSubmitMask message={UIStrings.SAVING}/>}
-
             <FieldWrapper labelText={UIStrings.CLEANUP_POLICIES.NAME_LABEL}
                           descriptionText={UIStrings.CLEANUP_POLICIES.NAME_DESCRIPTION}
                           id="cleanup-name-group">
@@ -175,7 +182,7 @@ export default function CleanupPoliciesForm({itemId, onDone}) {
               </Select>
             </FieldWrapper>
             <FieldWrapper labelText={UIStrings.CLEANUP_POLICIES.NOTES_LABEL}
-                          id="cleanup-notes-group">
+                          id="cleanup-notes-group" isOptional>
               <Textfield
                   {...Utils.fieldProps('notes', current)}
                   onChange={update}/>
@@ -186,9 +193,12 @@ export default function CleanupPoliciesForm({itemId, onDone}) {
                 {UIStrings.CLEANUP_POLICIES.CRITERIA_LABEL}
               </legend>
               {isFieldApplicable('lastBlobUpdated') &&
-              <CheckboxControlledWrapper isChecked={Boolean(data.criteriaLastBlobUpdated)}
+              <CheckboxControlledWrapper isChecked={Boolean(criteriaLastBlobUpdatedEnabled)}
                                          onChange={setCriteriaLastBlobUpdatedEnabled}
-                                         id="criteria-last-blob-updated-group">
+                                         id="criteria-last-blob-updated-group"
+                                         title={UIStrings.CLEANUP_POLICIES.LAST_UPDATED_CHECKBOX_TITLE(
+                                             criteriaLastBlobUpdatedEnabled
+                                         )}>
                 <FieldWrapper labelText={UIStrings.CLEANUP_POLICIES.LAST_UPDATED_LABEL}
                               descriptionText={UIStrings.CLEANUP_POLICIES.LAST_UPDATED_DESCRIPTION}>
                   <Textfield
@@ -202,9 +212,12 @@ export default function CleanupPoliciesForm({itemId, onDone}) {
               </CheckboxControlledWrapper>
               }
               {isFieldApplicable('lastDownloaded') &&
-              <CheckboxControlledWrapper isChecked={Boolean(data.criteriaLastDownloaded)}
+              <CheckboxControlledWrapper isChecked={Boolean(criteriaLastDownloadedEnabled)}
                                          onChange={setCriteriaLastDownloadedEnabled}
-                                         id="criteria-last-downloaded-group">
+                                         id="criteria-last-downloaded-group"
+                                         title={UIStrings.CLEANUP_POLICIES.LAST_DOWNLOADED_CHECKBOX_TITLE(
+                                             criteriaLastDownloadedEnabled
+                                         )}>
                 <FieldWrapper labelText={UIStrings.CLEANUP_POLICIES.LAST_DOWNLOADED_LABEL}
                               descriptionText={UIStrings.CLEANUP_POLICIES.LAST_DOWNLOADED_DESCRIPTION}>
                   <Textfield
@@ -218,9 +231,12 @@ export default function CleanupPoliciesForm({itemId, onDone}) {
               </CheckboxControlledWrapper>
               }
               {isFieldApplicable('isPrerelease') &&
-              <CheckboxControlledWrapper isChecked={Boolean(data.criteriaReleaseType)}
+              <CheckboxControlledWrapper isChecked={Boolean(criteriaReleaseTypeEnabled)}
                                          onChange={setCriteriaReleaseTypeEnabled}
-                                         id="criteria-release-type-group">
+                                         id="criteria-release-type-group"
+                                         title={UIStrings.CLEANUP_POLICIES.RELEASE_TYPE_CHECKBOX_TITLE(
+                                             criteriaReleaseTypeEnabled
+                                         )}>
                 <FieldWrapper labelText={UIStrings.CLEANUP_POLICIES.RELEASE_TYPE_LABEL}
                               descriptionText={UIStrings.CLEANUP_POLICIES.RELEASE_TYPE_DESCRIPTION}>
                   <Select
@@ -236,9 +252,12 @@ export default function CleanupPoliciesForm({itemId, onDone}) {
               </CheckboxControlledWrapper>
               }
               {isFieldApplicable('regex') &&
-              <CheckboxControlledWrapper isChecked={Boolean(data.criteriaAssetRegex)}
+              <CheckboxControlledWrapper isChecked={Boolean(criteriaAssetRegexEnabled)}
                                          onChange={setCriteriaAssetRegexEnabled}
-                                         id="criteria-asset-name-group">
+                                         id="criteria-asset-name-group"
+                                         title={UIStrings.CLEANUP_POLICIES.ASSET_NAME_CHECKBOX_TITLE(
+                                             criteriaAssetRegexEnabled
+                                         )}>
                 <FieldWrapper labelText={UIStrings.CLEANUP_POLICIES.ASSET_NAME_LABEL}
                               descriptionText={UIStrings.CLEANUP_POLICIES.ASSET_NAME_DESCRIPTION}>
                   <Textfield
@@ -250,23 +269,10 @@ export default function CleanupPoliciesForm({itemId, onDone}) {
               }
             </fieldset>
             }
-            <SectionFooter>
-              <NxTooltip title={Utils.saveTooltip({isPristine, isInvalid})}>
-                <NxButton variant="primary" className={(isPristine || isInvalid) && 'disabled'} onClick={save}
-                          type="submit">
-                  {UIStrings.SETTINGS.SAVE_BUTTON_LABEL}
-                </NxButton>
-              </NxTooltip>
-              <NxButton onClick={cancel}>{UIStrings.SETTINGS.CANCEL_BUTTON_LABEL}</NxButton>
-              {itemId &&
-              <NxButton variant="tertiary" onClick={confirmDelete}>
-                <NxFontAwesomeIcon icon={faTrash}/>
-                <span>{UIStrings.SETTINGS.DELETE_BUTTON_LABEL}</span>
-              </NxButton>}
-            </SectionFooter>
           </>}
-        </NxLoadWrapper>
+        </NxForm>
       </Section>
+
       {!isLoading && !loadError && hasData && <CleanupPoliciesPreview policyData={data}/>}
     </ContentBody>
   </Page>;

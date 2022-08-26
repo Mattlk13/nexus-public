@@ -13,13 +13,14 @@
 package org.sonatype.nexus.repository.content.store;
 
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
-
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -29,6 +30,7 @@ import org.sonatype.nexus.common.entity.Continuation;
 import org.sonatype.nexus.datastore.api.DataSessionSupplier;
 import org.sonatype.nexus.repository.content.Asset;
 import org.sonatype.nexus.repository.content.AssetBlob;
+import org.sonatype.nexus.repository.content.AssetInfo;
 import org.sonatype.nexus.repository.content.AttributeChangeSet;
 import org.sonatype.nexus.repository.content.Component;
 import org.sonatype.nexus.repository.content.event.asset.AssetAttributesEvent;
@@ -41,10 +43,10 @@ import org.sonatype.nexus.repository.content.event.asset.AssetPrePurgeEvent;
 import org.sonatype.nexus.repository.content.event.asset.AssetPurgedEvent;
 import org.sonatype.nexus.repository.content.event.asset.AssetUploadedEvent;
 import org.sonatype.nexus.repository.content.event.repository.ContentRepositoryDeletedEvent;
-import org.sonatype.nexus.repository.content.fluent.internal.FluentAssetImpl;
 import org.sonatype.nexus.transaction.Transactional;
 
 import com.google.inject.assistedinject.Assisted;
+import org.apache.shiro.util.CollectionUtils;
 
 import static java.util.Arrays.stream;
 import static org.sonatype.nexus.repository.content.AttributesHelper.applyAttributeChange;
@@ -58,6 +60,8 @@ import static org.sonatype.nexus.repository.content.AttributesHelper.applyAttrib
 public class AssetStore<T extends AssetDAO>
     extends ContentStoreEventSupport<T>
 {
+  private static final int LAST_UPDATED_LIMIT = 1000;
+
   @Inject
   public AssetStore(final DataSessionSupplier sessionSupplier,
                     @Assisted final String contentStoreName,
@@ -109,6 +113,25 @@ public class AssetStore<T extends AssetDAO>
   }
 
   /**
+   * Browse all assets with corresponding components and blobs in the given repository in a paged fashion.
+   * The returned assets will be sorted by asset id in ascending order.
+   *
+   * @param repositoryId      the repository to browse
+   * @param continuationToken optional token to continue from a previous request
+   * @param limit             maximum number of assets to return
+   * @return collection of assets and the next continuation token
+   * @see Continuation#nextContinuationToken()
+   */
+  @Transactional
+  public Continuation<Asset> browseEagerAssets(
+      final int repositoryId,
+      @Nullable final String continuationToken,
+      final int limit)
+  {
+    return dao().browseEagerAssetsInRepository(repositoryId, continuationToken, limit);
+  }
+
+  /**
    * Browse all assets in the given repositories in a paged fashion. The returned assets will be sorted
    * by asset id in ascending order.
    *
@@ -144,6 +167,73 @@ public class AssetStore<T extends AssetDAO>
   @Transactional
   public Collection<Asset> browseComponentAssets(final Component component) {
     return dao().browseComponentAssets(component);
+  }
+
+  /**
+   * Find updated assets. The paging works differently because results are sorted by blobCreated instead of id. Page
+   * through results by passing the blobCreated value from the last record in the Collection.
+   *
+   * @param repositoryId the repository to browse
+   * @param blobCreated blobCreated of asset content from the last record of the previous call.
+   * @param regexExpressions  list of wildcard expressions to match on path.
+   *                             Supported special characters are * and ?
+   * @param batchSize how many assets to fetch in each call. May return more assets than this if there are
+   *                  multiple assets with the same blobCreated value as the last record.
+   * @return batch of updated assets
+   */
+  @Transactional
+  public List<AssetInfo> findUpdatedAssets(
+      final int repositoryId,
+      @Nullable final OffsetDateTime blobCreated,
+      final List<String> regexExpressions,
+      final int batchSize)
+  {
+    // We consider dates the same if they are at the same millisecond. Normalization of the date plus using a >= query has
+    // the effect of doing a > query as if the data in the database was truncated to the millisecond.
+    OffsetDateTime blobCreatedNormalized = null;
+    if (blobCreated != null) {
+      blobCreatedNormalized = blobCreated.plus(1, ChronoUnit.MILLIS).truncatedTo(ChronoUnit.MILLIS);
+    }
+
+    // Fetch one extra record to check if there are more results with the same blobCreated value. Most of the time
+    // this won't be the case, and we will not need a query to find them all.
+    List<AssetInfo> assets = dao().findGreaterThanOrEqualToBlobCreated(repositoryId, blobCreatedNormalized, regexExpressions, batchSize + 1);
+
+    if (assets.size() == batchSize + 1) {
+      if (hasMoreResultsWithSameBlobCreated(assets)) {
+        Set<String> knownPaths = assets.stream().map(AssetInfo::path).collect(Collectors.toSet());
+        AssetInfo lastAsset = assets.get(assets.size() - 1);
+
+        OffsetDateTime startBlobCreated = lastAsset.blobCreated().truncatedTo(ChronoUnit.MILLIS);
+        OffsetDateTime endBlobCreated = lastAsset.blobCreated().plus(1, ChronoUnit.MILLIS);
+
+        // Add all records that match the timestamp (truncating to millisecond) of the last record. Then we can continue
+        // paging with a greater than query.
+        List<AssetInfo> matchBlobCreated =
+            dao().findBlobCreatedWithinRange(repositoryId, startBlobCreated, endBlobCreated, regexExpressions, LAST_UPDATED_LIMIT);
+
+        if (matchBlobCreated.size() == LAST_UPDATED_LIMIT) {
+          log.error(
+              "Found {} assets with identical last_updated value. Replication is skipping over additional assets with last_updated = {}",
+              LAST_UPDATED_LIMIT, lastAsset.blobCreated());
+        }
+
+        assets.addAll(
+            matchBlobCreated.stream().filter(asset -> !knownPaths.contains(asset.path())).collect(Collectors.toList()));
+      }
+      else {
+        // It's not safe to leave the extra record in. There may be more assets with same blobCreated value as it.
+        assets.remove(assets.size() - 1);
+      }
+    }
+
+    return assets;
+  }
+
+  private boolean hasMoreResultsWithSameBlobCreated(final List<AssetInfo> assets) {
+    OffsetDateTime lastBlobCreated = assets.get(assets.size() - 1).blobCreated().truncatedTo(ChronoUnit.MILLIS);;
+    OffsetDateTime secondToLastBlobCreated = assets.get(assets.size() - 2).blobCreated().truncatedTo(ChronoUnit.MILLIS);;
+    return lastBlobCreated.equals(secondToLastBlobCreated);
   }
 
   /**
@@ -192,6 +282,21 @@ public class AssetStore<T extends AssetDAO>
   @Transactional
   public Optional<Asset> findByBlobRef(final int repositoryId, final BlobRef blobRef) {
     return dao().findByBlobRef(repositoryId, blobRef);
+  }
+
+  /**
+   * Retrieves an assets associated with the given component ids.
+   *
+   * @param componentIds a set of component ids to search
+   * @return collection of {@link AssetInfo}
+   */
+  @Transactional
+  public Collection<AssetInfo> findByComponentIds(final Set<Integer> componentIds) {
+    if (CollectionUtils.isEmpty(componentIds)) {
+      return Collections.emptyList();
+    }
+
+    return dao().findByComponentIds(componentIds);
   }
 
   /**
@@ -266,9 +371,12 @@ public class AssetStore<T extends AssetDAO>
   @Transactional
   public boolean deleteAsset(final Asset asset) {
     preCommitEvent(() -> new AssetPreDeleteEvent(asset));
-    postCommitEvent(() -> new AssetDeletedEvent(asset));
+    boolean deleted = dao().deleteAsset(asset);
 
-    return dao().deleteAsset(asset);
+    if (deleted) {
+      postCommitEvent(() -> new AssetDeletedEvent(asset));
+    }
+    return deleted;
   }
 
   /**
@@ -366,7 +474,7 @@ public class AssetStore<T extends AssetDAO>
    * @since 3.29
    */
   @Transactional
-  public void created(final FluentAssetImpl asset, final OffsetDateTime created) {
+  public void created(final Asset asset, final OffsetDateTime created) {
     dao().created(InternalIds.internalAssetId(asset), created);
   }
 

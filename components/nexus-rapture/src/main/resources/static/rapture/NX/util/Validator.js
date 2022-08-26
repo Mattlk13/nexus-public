@@ -40,7 +40,7 @@ Ext.define('NX.util.Validator', {
    * is the same as default ExtJS email vtype.
    * @private
    */
-  nxEmailRegex : /^(")?(?:[^\."])(?:(?:[\.])?(?:[\w\-!#$%&'*+/=?^_`{|}~]))*\1@(\w[\-\w]*\.){1,5}([A-Za-z]){2,60}$/,
+  nxEmailRegex : /^(")?(?:[^\."])(?:(?:[\.])?(?:[\w\-!#$%&'*+/=?^_`{|}~]))*\1@(\w[\-\w]*\.?){1,5}([A-Za-z]){2,60}$/,
 
   /**
    * A regular expression to detect a valid hostname according to RFC 1123.
@@ -67,6 +67,12 @@ Ext.define('NX.util.Validator', {
    * @private
    */
   nxLeadingAndTrailingWhiteSpaceRegex : /^[ \s]+|[ \s]+$/,
+
+  /**
+   * Regular expression to validate docker subdomain
+   * @private
+   */
+  nxSubdomainRegex : /^[a-zA-Z](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$/,
 
   /**
    * @public
@@ -100,7 +106,11 @@ Ext.define('NX.util.Validator', {
         'nx-url': function(val) {
           return NX.util.Validator.nxUrlRegex.test(val);
         },
-        'nx-urlText': NX.I18n.get('Util_Validator_Url')
+        'nx-urlText': NX.I18n.get('Util_Validator_Url'),
+        'nx-subdomain': function(val) {
+          return NX.util.Validator.nxSubdomainRegex.test(val);
+        },
+        'nx-subdomainText': NX.I18n.get('Util_Validator_Subdomain_Text'),
       }
     ];
 

@@ -26,19 +26,21 @@ import org.sonatype.nexus.orient.DatabaseExternalizer;
 import org.sonatype.nexus.orient.DatabaseInstance;
 import org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Type;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
+import org.mockito.Mock;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -57,50 +59,58 @@ public class PasswordSanitizedJsonSourceTest
   @Captor
   private ArgumentCaptor<Set<String>> setArgumentCaptor;
 
+  @Mock
+  private DatabaseInstance databaseInstance;
+
+  @Mock
+  private DatabaseExternalizer databaseExternalizer;
+
+  private Provider<DatabaseInstance> databaseInstanceProvider = () -> databaseInstance;
+
+  private PasswordSanitizedJsonSource underTest;
+
+  private File exportFile;
+
+  private ObjectMapper mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+  @Before
+  public void setup() throws Exception {
+    when(databaseInstance.externalizer()).thenReturn(databaseExternalizer);
+
+    exportFile = temporaryFolder.newFile();
+
+    underTest = new PasswordSanitizedJsonSource(Type.CONFIG, "path", databaseInstanceProvider);
+  }
+
   @Test
   public void testGenerate_excludesSensitiveClassesFromDBExport() throws Exception {
-    DatabaseInstance instance = mock(DatabaseInstance.class);
-    DatabaseExternalizer externalizer = mock(DatabaseExternalizer.class);
-    when(instance.externalizer()).thenReturn(externalizer);
-    Provider<DatabaseInstance> instanceProvider = () -> instance;
-    PasswordSanitizedJsonSource passwordSanitizedJsonSource =
-        new PasswordSanitizedJsonSource(Type.CONFIG, "path", instanceProvider);
-    File exportJsonFile = temporaryFolder.newFile();
     doAnswer(invocation -> {
       OutputStream os = (OutputStream) invocation.getArguments()[0];
       os.write("{\"records\": []}".getBytes(StandardCharsets.UTF_8));
       return null;
-    }).when(externalizer).export(any(), any());
+    }).when(databaseExternalizer).export(any(), any());
 
-    passwordSanitizedJsonSource.generate(exportJsonFile);
+    underTest.generate(exportFile);
 
-    verify(externalizer).export(outputStreamArgumentCaptor.capture(), setArgumentCaptor.capture());
+    verify(databaseExternalizer).export(outputStreamArgumentCaptor.capture(), setArgumentCaptor.capture());
 
     assertThat(setArgumentCaptor.getValue(), is(new HashSet<>(Arrays.asList("api_key", "usertoken_record"))));
   }
 
   @Test
   public void testGenerate_excludesSensitiveFieldsFromJson() throws Exception {
-    DatabaseInstance instance = mock(DatabaseInstance.class);
-    DatabaseExternalizer externalizer = mock(DatabaseExternalizer.class);
-    when(instance.externalizer()).thenReturn(externalizer);
-    Provider<DatabaseInstance> instanceProvider = () -> instance;
-    PasswordSanitizedJsonSource passwordSanitizedJsonSource =
-        new PasswordSanitizedJsonSource(Type.CONFIG, "path", instanceProvider);
-    File exportJsonFile = temporaryFolder.newFile();
     doAnswer(invocation -> {
       OutputStream os = (OutputStream) invocation.getArguments()[0];
       os.write(
           ("{\"secret\": \"secret-key\", \"applicationPassword\": \"password\", \"systemPassword\": \"password\", " +
-              "\"password\": \"password\", \"secretAccessKey\": \"password\", \"sessionToken\": \"sToken\"}")
-              .getBytes(StandardCharsets.UTF_8));
+              "\"password\": \"password\", \"secretAccessKey\": \"password\", \"sessionToken\": \"sToken\", " +
+              "\"destination_instance_password\": \"password\"}").getBytes(StandardCharsets.UTF_8));
       return null;
-    }).when(externalizer).export(any(), any());
+    }).when(databaseExternalizer).export(any(), any());
 
-    passwordSanitizedJsonSource.generate(exportJsonFile);
+    underTest.generate(exportFile);
 
-    ObjectMapper mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-    Model model = mapper.readValue(exportJsonFile, Model.class);
+    Model model = mapper.readValue(exportFile, Model.class);
 
     assertThat(model.secret, is(PasswordSanitizedJsonSource.REPLACEMENT));
     assertThat(model.applicationPassword, is(PasswordSanitizedJsonSource.REPLACEMENT));
@@ -108,29 +118,22 @@ public class PasswordSanitizedJsonSourceTest
     assertThat(model.password, is(PasswordSanitizedJsonSource.REPLACEMENT));
     assertThat(model.secretAccessKey, is(PasswordSanitizedJsonSource.REPLACEMENT));
     assertThat(model.sessionToken, is(PasswordSanitizedJsonSource.REPLACEMENT));
+    assertThat(model.destinationInstancePassword, is(PasswordSanitizedJsonSource.REPLACEMENT));
   }
 
   @Test
   public void testGenerate_blankSensitiveFieldsNotReplaced() throws Exception {
-    DatabaseInstance instance = mock(DatabaseInstance.class);
-    DatabaseExternalizer externalizer = mock(DatabaseExternalizer.class);
-    when(instance.externalizer()).thenReturn(externalizer);
-    Provider<DatabaseInstance> instanceProvider = () -> instance;
-    PasswordSanitizedJsonSource passwordSanitizedJsonSource =
-        new PasswordSanitizedJsonSource(Type.CONFIG, "path", instanceProvider);
-    File exportJsonFile = temporaryFolder.newFile();
     doAnswer(invocation -> {
       OutputStream os = (OutputStream) invocation.getArguments()[0];
       os.write(
           ("{\"secret\": \"\", \"password\": \"password\", \"secretAccessKey\": \"\"}")
               .getBytes(StandardCharsets.UTF_8));
       return null;
-    }).when(externalizer).export(any(), any());
+    }).when(databaseExternalizer).export(any(), any());
 
-    passwordSanitizedJsonSource.generate(exportJsonFile);
+    underTest.generate(exportFile);
 
-    ObjectMapper mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-    Model model = mapper.readValue(exportJsonFile, Model.class);
+    Model model = mapper.readValue(exportFile, Model.class);
 
     assertThat(model.secret, is(""));
     assertThat(model.password, is(PasswordSanitizedJsonSource.REPLACEMENT));
@@ -150,5 +153,8 @@ public class PasswordSanitizedJsonSourceTest
     public String secretAccessKey;
 
     public String sessionToken;
+
+    @JsonProperty("destination_instance_password")
+    public String destinationInstancePassword;
   }
 }

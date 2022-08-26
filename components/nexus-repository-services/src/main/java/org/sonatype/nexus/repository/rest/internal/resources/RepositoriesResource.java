@@ -13,13 +13,13 @@
 package org.sonatype.nexus.repository.rest.internal.resources;
 
 import java.util.List;
-
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 
 import org.sonatype.nexus.repository.rest.api.RepositoryManagerRESTAdapter;
@@ -28,7 +28,6 @@ import org.sonatype.nexus.repository.rest.internal.resources.doc.RepositoriesRes
 import org.sonatype.nexus.rest.Resource;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.util.stream.Collectors.toList;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
@@ -53,10 +52,15 @@ public class RepositoriesResource
   }
 
   @GET
+  @Override
   public List<RepositoryXO> getRepositories() {
-    return repositoryManagerRESTAdapter.getRepositories()
-        .stream()
-        .map(RepositoryXO::fromRepository)
-        .collect(toList());
+    return repositoryManagerRESTAdapter.getRepositories();
+  }
+
+  @GET
+  @Override
+  @Path("/{repositoryName}")
+  public RepositoryXO getRepository(@PathParam("repositoryName") final String repositoryName) {
+    return RepositoryXO.fromRepository(repositoryManagerRESTAdapter.getReadableRepository(repositoryName));
   }
 }

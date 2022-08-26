@@ -206,6 +206,11 @@ public class StorageTxImpl
   }
 
   @Override
+  public void end() {
+    blobTx.end();
+  }
+
+  @Override
   public boolean isActive() {
     return ACTIVE.equals(stateGuard.getCurrent());
   }
@@ -314,6 +319,14 @@ public class StorageTxImpl
   public Iterable<Asset> browseAssets(final Query query, final Bucket bucket) {
     return assetEntityAdapter.browseByQueryAsync(db, query.getWhere(), query.getParameters(), ImmutableList.of(bucket), 
         query.getQuerySuffix());
+  }
+
+  @Override
+  @Guarded(by = ACTIVE)
+  public Iterable<Asset> browseAllPartiallyByLimit(final Bucket bucket)
+  {
+    return assetEntityAdapter
+        .browseAllPartiallyByLimit(db, null, null, ImmutableList.of(bucket));
   }
 
   @Override

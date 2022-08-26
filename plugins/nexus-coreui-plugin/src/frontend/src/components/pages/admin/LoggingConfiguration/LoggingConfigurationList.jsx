@@ -13,10 +13,20 @@
 import React from 'react';
 import {useMachine} from '@xstate/react';
 
-import {faChevronRight, faRedo, faScroll} from '@fortawesome/free-solid-svg-icons';
+import {faRedo, faScroll} from '@fortawesome/free-solid-svg-icons';
 
 import {
   ContentBody,
+  ListMachineUtils,
+  Page,
+  PageActions,
+  PageHeader,
+  PageTitle,
+  Section,
+  SectionToolbar
+} from '@sonatype/nexus-ui-plugin';
+
+import {
   NxButton,
   NxFilterInput,
   NxFontAwesomeIcon,
@@ -25,14 +35,7 @@ import {
   NxTableCell,
   NxTableHead,
   NxTableRow,
-  Page,
-  PageActions,
-  PageHeader,
-  PageTitle,
-  Section,
-  SectionToolbar,
-  Utils
-} from '@sonatype/nexus-ui-plugin';
+} from '@sonatype/react-shared-components';
 
 import LoggingConfigurationListMachine from './LoggingConfigurationListMachine';
 
@@ -45,8 +48,8 @@ export default function LoggingConfigurationList({onCreate, onEdit}) {
   const filterText = current.context.filter;
   const error = current.context.error;
 
-  const nameSortDir = Utils.getSortDirection('name', current.context);
-  const levelSortDir = Utils.getSortDirection('level', current.context);
+  const nameSortDir = ListMachineUtils.getSortDirection('name', current.context);
+  const levelSortDir = ListMachineUtils.getSortDirection('level', current.context);
 
   function filter(value) {
     send('FILTER', {filter: value});

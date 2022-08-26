@@ -28,6 +28,8 @@
 
       CONSTRAINT pk_privilege_id PRIMARY KEY (id)
     );
+
+    CREATE INDEX IF NOT EXISTS idx_privilege_by_name ON privilege(name)
   </insert>
 
   <select id="browse" resultType="CPrivilegeData">
@@ -43,14 +45,37 @@
     SELECT * FROM privilege WHERE id = #{value};
   </select>
 
+  <select id="readByName" resultType="CPrivilegeData">
+    SELECT * FROM privilege WHERE name = #{value};
+  </select>
+
+  <select id="findByIds" resultType="CPrivilegeData" parameterType="java.util.Set">
+    SELECT * FROM privilege
+    <where>
+      <foreach collection="ids" item="ids" index="index" open="id IN (" close=")" separator=",">
+        #{ids}
+      </foreach>
+    </where>
+  </select>
+
   <update id="update" parameterType="CPrivilegeData">
     UPDATE privilege SET name = #{name}, description = #{description}, type = #{type},
         properties = #{properties}, read_only = #{readOnly}, version = #{version}
         WHERE id = #{id};
   </update>
 
+  <update id="updateByName" parameterType="CPrivilegeData">
+    UPDATE privilege SET name = #{name}, description = #{description}, type = #{type},
+                         properties = #{properties}, read_only = #{readOnly}, version = #{version}
+    WHERE name = #{name};
+  </update>
+
   <delete id="delete">
     DELETE FROM privilege WHERE id = #{value};
+  </delete>
+
+  <delete id="deleteByName">
+    DELETE FROM privilege WHERE name = #{value};
   </delete>
 
 </mapper>

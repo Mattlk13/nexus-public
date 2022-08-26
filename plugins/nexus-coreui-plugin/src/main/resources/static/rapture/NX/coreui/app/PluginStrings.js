@@ -364,6 +364,8 @@ Ext.define('NX.coreui.app.PluginStrings', {
         '<a href="https://links.sonatype.com/products/nexus/docker-ssl-connector/docs" target="_blank" rel="noopener">documentation</a>' +
         ' for which connector is appropriate for your use case. For information on scaling the repositories' +
         ' see our <a href="https://links.sonatype.com/products/nexus/docker-scaling-repositories/docs" target="_blank" rel="noopener">scaling documentation</a>.</em>',
+    Repository_Facet_Docker_Subdomain_FieldLabel: 'Allow Subdomain Routing',
+    Repository_Facet_Docker_Subdomain_HelpText: 'Use the following subdomain to make push and pull requests for this repository.',
     Repository_Facet_DockerConnectorFacet_HttpPort_FieldLabel: 'HTTP',
     Repository_Facet_DockerConnectorFacet_HttpPort_HelpText: 'Create an HTTP connector at specified port. Normally used if the server is behind a secure proxy.',
     Repository_Facet_DockerConnectorFacet_HttpsPort_FieldLabel: 'HTTPS',
@@ -448,6 +450,13 @@ Ext.define('NX.coreui.app.PluginStrings', {
     Repository_Facet_ProxyFacet_Remote_FieldLabel: 'Remote storage',
     Repository_Facet_ProxyFacet_Remote_HelpText: 'Location of the remote repository being proxied',
     Repository_Facet_ProxyFacet_Remote_EmptyText: 'Enter a URL',
+    Repository_Facet_ProxyFacet_PreemptivePull_FieldLabel: 'Pre-emptive Pull',
+    Repository_Facet_ProxyFacet_PreemptivePull_HelpText: 'If enabled, the remote storage will be monitored for changes, and new components will be replicated automatically, and cached locally',
+    Repository_Facet_ProxyFacet_AssetNameMatcher_FieldLabel: 'Asset Name Matcher',
+    Repository_Facet_ProxyFacet_AssetNameMatcher_HelpText: 'This field allows you to use a RegEx to match search for specific components to help define scope.\n' +
+        'For more information check out our <a target="_blank" href="https://links.sonatype.com/products/nxrm3/docs/pull-replication/asset-name-matcher">documentation for format specific options</a>',
+    Repository_Facet_ProxyFacet_AssetNameMatcher_EmptyText: 'Entry',
+    Repository_Facet_ProxyFacet_AssetNameMatcher_InvalidText: 'Invalid Regex',
     Repository_Facet_ProxyFacet_Bower_Remote_HelpText: 'Location of the remote repository being proxied, e.g. https://registry.bower.io',
     Repository_Facet_ProxyFacet_Docker_Remote_HelpText: 'Location of the remote repository being proxied, e.g. https://registry-1.docker.io',
     Repository_Facet_ProxyFacet_Maven_Remote_HelpText: 'Location of the remote repository being proxied, e.g. https://repo1.maven.org/maven2/',
@@ -456,9 +465,9 @@ Ext.define('NX.coreui.app.PluginStrings', {
     Repository_Facet_ProxyFacet_Pypi_Remote_HelpText: 'Location of the remote repository being proxied, e.g. https://pypi.org',
     Repository_Facet_ProxyFacet_Rubygems_Remote_HelpText: 'Location of the remote repository being proxied, e.g. https://rubygems.org',
     Repository_Facet_ProxyFacet_Yum_Remote_HelpText: 'Location of the remote repository being proxied, e.g.  http://mirror.centos.org/centos/',
-    Ssl_SslUseTrustStore_BoxLabel: 'Use the Nexus truststore',
+    Ssl_SslUseTrustStore_BoxLabel: 'Use the Nexus Repository truststore',
     Ssl_SslUseTrustStore_Certificate_Button: 'View certificate',
-    Ssl_SslUseTrustStore_Certificate_HelpText: 'Use certificates stored in the Nexus truststore to connect to external systems',
+    Ssl_SslUseTrustStore_Certificate_HelpText: 'Use certificates stored in the Nexus Repository truststore to connect to external systems',
     Maven2Facet_VersionPolicy_FieldLabel: 'Version policy',
     Maven2Facet_VersionPolicy_HelpText: 'What type of artifacts does this repository store?',
     Maven2Facet_VersionPolicy_EmptyText: 'Select a policy',
@@ -510,10 +519,11 @@ Ext.define('NX.coreui.app.PluginStrings', {
     Repository_Facet_NugetProxyFacet_ItemMaxAge_FieldLabel: 'Metadata query cache age',
     Repository_Facet_NugetProxyFacet_ItemMaxAge_HelpText: 'How long to cache query results from the proxied repository (in seconds)',
     Repository_Facet_Npm_Title: 'npm',
-    Repository_Facet_Npm_RemoveNonCataloged_Label: 'Remove Non-cataloged Versions',
-    Repository_Facet_Npm_RemoveNonCataloged_HelpText: 'Remove non-cataloged versions from the npm package metadata. <span style="font-weight: bold">IQ: Audit and Quarantine</span> capability must be enabled for this feature to take effect. <a target="_blank" href="http://links.sonatype.com/products/nxrm3/docs/npm-with-firewall">Learn more.</a>',
-    Repository_Facet_Npm_RemoveQuarantined_Label: 'Remove Quarantined Versions',
-    Repository_Facet_Npm_RemoveQuarantined_HelpText: 'Remove quarantined versions from the npm package metadata. <span style="font-weight: bold">IQ: Audit and Quarantine</span> capability must be enabled for this feature to take effect. <a target="_blank" href="http://links.sonatype.com/products/nxrm3/docs/npm-with-firewall">Learn more.</a>',
+    Repository_Facet_Npm_RemoveNonCataloged_Label: 'Download cataloged versions only',
+    Repository_Facet_Npm_RemoveNonCataloged_HelpText: 'Non-cataloged versions will not be downloaded. <span style="font-weight: bold">IQ: Audit and Quarantine</span> capability must be enabled for this feature to take effect. <a target="_blank" href="http://links.sonatype.com/products/nxrm3/docs/npm-with-firewall">Learn more.</a>',
+    Repository_Facet_Npm_RemoveQuarantined_Label: 'Download policy compliant versions only',
+    Repository_Facet_Npm_RemoveQuarantined_HelpText: 'Versions that are going to be quarantined will not be downloaded. <span style="font-weight: bold">IQ: Audit and Quarantine</span> capability must be enabled for this feature to take effect. <a target="_blank" href="http://links.sonatype.com/products/nxrm3/docs/npm-with-firewall">Learn more.</a>',
+    Repository_Facet_Npm_RemoveQuarantined_Warning: 'This feature requires IQ Server Release 134 or higher.',
     Repository_Facet_HttpClientFacet_AuthenticationType_FieldLabel: 'Authentication type',
     Repository_Facet_HttpClientFacet_AuthenticationType_Username: 'Username',
     Repository_Facet_HttpClientFacet_AuthenticationType_NTLM: 'Windows NTLM',
@@ -677,15 +687,6 @@ Ext.define('NX.coreui.app.PluginStrings', {
     SelectorPreviewWindow_EmptyText_Filter: 'No assets matched "$filter"',
     SelectorPreviewWindow_Name_Column: 'Name',
     SelectorPreviewWindow_Preview_Button: 'Preview',
-
-    // Admin -> Repository -> Proprietary Repositories
-    ProprietaryRepositories_Text: 'Proprietary Repositories',
-    ProprietaryRepositories_Field_Label: 'Proprietary Repositories Configuration',
-    ProprietaryRepositories_Description: 'Manage the set of hosted repositories that contain proprietary components',
-    ProprietaryRepositories_Update_Error: 'You do not have permission to proprietary repositories',
-    ProprietaryRepositories_Update_Success: 'Proprietary repositories settings $action',
-    ProprietaryRepositories_Available_FromTitle: 'Generic Hosted Repositories',
-    ProprietaryRepositories_Available_ToTitle: 'Proprietary Hosted Repositories',
 
     // Admin -> Security
     FeatureGroups_Security_Title: 'Security',
@@ -934,17 +935,9 @@ Ext.define('NX.coreui.app.PluginStrings', {
     Ldap_LdapServerUserAndGroupForm_VerifyGroupMapping_Button: 'Verify user mapping',
     Ldap_LdapServerUserAndGroupForm_VerifyLogin_Button: 'Verify login',
 
-    // Admin -> Security -> Realms
-    RealmSettings_Text: 'Realms',
-    RealmSettings_Description: 'Manage the active security realms and their order',
-    Security_RealmSettings_Update_Error: 'You do not have permission to configure realms',
-    Security_RealmSettings_Update_Success: 'Security realms settings $action',
-    Security_RealmSettings_Available_FromTitle: 'Available',
-    Security_RealmSettings_Available_ToTitle: 'Active',
-
     // Admin -> Security -> SSL Certificates
     SslCertificates_Text: 'SSL Certificates',
-    SslCertificates_Description: 'Manage trusted SSL certificates for use with the Nexus truststore',
+    SslCertificates_Description: 'Manage trusted SSL certificates for use with the Nexus Repository truststore',
     SslCertificates_Paste_Title: 'Paste Certificate as PEM',
     Ssl_SslCertificateAddFromPem_Cancel_Button: '@Button_Cancel',
     SslCertificates_Load_Title: 'Load Certificate from Server',
@@ -1236,6 +1229,7 @@ Ext.define('NX.coreui.app.PluginStrings', {
     Task_TaskFeature_Delete_Button: 'Delete task',
     Tasks_Delete_Success: 'Task deleted: {0}',
     Task_TaskFeature_Run_Button: 'Run',
+    Task_TaskFeature_Run_Button_Id: 'task_run_button_id',
     Tasks_RunConfirm_Title: 'Confirm?',
     Tasks_RunConfirm_HelpText: 'Run {0} task?',
     Tasks_Run_Success: 'Task started: {0}',
@@ -1302,7 +1296,7 @@ Ext.define('NX.coreui.app.PluginStrings', {
     ,
     Task_TaskScheduleManual_HelpText: 'Without recurrence, this service can only be run manually.',
     Task_Script_Creation_Disabled: '<i>Admin - Execute script</i> task creation is disabled. ' +
-         '<a href="https://links.sonatype.com/products/nxrm3/disabled-groovy-scripting">More information</a>',
+        '<a href="https://links.sonatype.com/products/nxrm3/disabled-groovy-scripting">More information</a>',
 
     // Authentication section
     System_AuthenticationSettings_Username_FieldLabel: 'Username',
@@ -1386,6 +1380,9 @@ Ext.define('NX.coreui.app.PluginStrings', {
     ClmSettings_Properties_Verify_Button: 'Verify connection',
     ClmSettings_Show_Link_FieldLabel: 'Show IQ Server Link',
     ClmSettings_Show_Link_HelpText: 'Show IQ Server link in Browse menu when server is enabled',
+
+    //Settings form general error
+    SettingsForm_Save_Error: 'An error occurred while saving the form'
   },
 
   /**
@@ -1615,7 +1612,17 @@ Ext.define('NX.coreui.app.PluginStrings', {
       Abort_Message: 'Upgrade aborted',
 
       Done_Mask: 'Confirming',
-      Done_Message: 'Upgrade done'
+      Done_Message: 'Upgrade done',
+
+      Done_Dialog_title: 'Upgrade Complete',
+      Done_Dialog_prefix: '<p>Repository content is available immediately for direct download.</p>' +
+          '<p>Tasks have been automatically scheduled to build:</p>' +
+          '<ul>',
+      Done_Dialog_with_browse: '<li>component Browse UI and HTML views</li>',
+      Done_Dialog_with_search: '<li>component Search UI and Search REST APIs</li>',
+      Done_Dialog_suffix: '</ul>' +
+          '<p>All components will not be visible until tasks named "Repo 2 Migration" finish. ' +
+          'Monitor status in the Tasks user interface or by examining the associated task log.</p>'
     },
 
     'NX.coreui.view.ldap.LdapSystemPasswordModal': {

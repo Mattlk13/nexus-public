@@ -11,13 +11,13 @@
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
 import React from 'react';
-import {fireEvent, waitFor, waitForElementToBeRemoved} from '@testing-library/react';
+import {fireEvent, screen, waitFor, waitForElementToBeRemoved} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/extend-expect';
 import {when} from 'jest-when';
 
-import TestUtils from '@sonatype/nexus-ui-plugin/src/frontend/src/interface/TestUtils';
 import axios from 'axios';
-import {ExtJS, Utils} from '@sonatype/nexus-ui-plugin';
+import {ExtJS, Utils, TestUtils} from '@sonatype/nexus-ui-plugin';
 
 import CleanupPoliciesForm from './CleanupPoliciesForm';
 
@@ -52,6 +52,14 @@ const FORMATS_URL = '/service/rest/internal/cleanup-policies/criteria/formats';
 const REPOSITORIES_URL = '/service/rest/internal/ui/repositories';
 const PREVIEW_URL = '/service/rest/internal/cleanup-policies/preview/components';
 
+const selectors = {
+  ...TestUtils.selectors,
+  getCriteriaLastBlobUpdatedCheckbox: () => screen.getByTitle(/(Enable|Disable) Component Age Criteria/),
+  getCriteriaLastDownloadedCheckbox: () => screen.getByTitle(/(Enable|Disable) Component Usage Criteria/),
+  getCriteriaReleaseTypeCheckbox: () => screen.getByTitle(/(Enable|Disable) Release Type Criteria/),
+  getCriteriaAssetRegexCheckbox: () => screen.getByTitle(/(Enable|Disable) Asset Name Matcher Criteria/)
+}
+
 describe('CleanupPoliciesForm', function() {
   const CONFIRM = Promise.resolve();
   const onDone = jest.fn();
@@ -75,7 +83,7 @@ describe('CleanupPoliciesForm', function() {
   }
 
   function renderView(view) {
-    return TestUtils.render(view, ({queryByLabelText, queryByText, queryByPlaceholderText, loadingMask}) => ({
+    return TestUtils.render(view, ({queryByLabelText, queryByText, queryByPlaceholderText}) => ({
       name: () => queryByLabelText(UIStrings.CLEANUP_POLICIES.NAME_LABEL),
       format: () => queryByLabelText(UIStrings.CLEANUP_POLICIES.FORMAT_LABEL),
       notes: () => queryByLabelText(UIStrings.CLEANUP_POLICIES.NOTES_LABEL),
@@ -88,16 +96,20 @@ describe('CleanupPoliciesForm', function() {
       deleteButton: () => queryByText(UIStrings.SETTINGS.DELETE_BUTTON_LABEL),
       previewButton: () => queryByText(UIStrings.CLEANUP_POLICIES.PREVIEW.BUTTON),
       previewRepositories: () => queryByLabelText(UIStrings.CLEANUP_POLICIES.PREVIEW.REPOSITORY_LABEL),
-      previewFilterText: () => queryByPlaceholderText(UIStrings.CLEANUP_POLICIES.FILTER_PLACEHOLDER)
+      previewFilterText: () => queryByPlaceholderText(UIStrings.CLEANUP_POLICIES.FILTER_PLACEHOLDER),
+      previewSampleWarning: () => queryByText(UIStrings.CLEANUP_POLICIES.PREVIEW.SAMPLE_WARNING, {exact: false}),
+      previewCmpCount: (a, t) => queryByText(UIStrings.CLEANUP_POLICIES.PREVIEW.COMPONENT_COUNT(a, t), {exact: false})
     }));
   }
 
   beforeEach(() => {
-    when(axios.get).calledWith(REPOSITORIES_URL).mockResolvedValue({
-      data:  [{
-        'id': 'maven-central',
-        'name': 'maven-central'
-      }]
+    when(axios.get)
+      .calledWith(REPOSITORIES_URL, {params: {format: EDITABLE_ITEM.format}})
+      .mockResolvedValue({
+        data:  [{
+          'id': 'maven-central',
+          'name': 'maven-central'
+        }]
     });
 
     when(axios.get).calledWith(EDIT_URL(EDITABLE_ITEM.name)).mockResolvedValue({
@@ -114,7 +126,7 @@ describe('CleanupPoliciesForm', function() {
   });
 
   it('renders the resolved data', async function() {
-    const {container,
+    const {
       loadingMask,
       name,
       format,
@@ -123,17 +135,22 @@ describe('CleanupPoliciesForm', function() {
       criteriaLastDownloaded,
       criteriaReleaseType,
       criteriaAssetRegex,
-      saveButton} = renderEditView(EDITABLE_ITEM.name);
+      saveButton
+    } = renderEditView(EDITABLE_ITEM.name);
 
     await waitForElementToBeRemoved(loadingMask);
 
     expect(name()).toHaveValue('test');
     expect(format()).toHaveValue('testformat');
     expect(notes()).toHaveValue('test notes');
+    expect(selectors.getCriteriaLastBlobUpdatedCheckbox()).toHaveClass('tm-checked');
     expect(criteriaLastBlobUpdated()).toHaveValue('7');
+    expect(selectors.getCriteriaLastDownloadedCheckbox()).toHaveClass('tm-checked');
     expect(criteriaLastDownloaded()).toHaveValue('8');
-    expect(criteriaReleaseType()).toHaveValue('RELEASES')
-    expect(criteriaAssetRegex()).toHaveValue('.*')
+    expect(selectors.getCriteriaReleaseTypeCheckbox()).toHaveClass('tm-checked');
+    expect(criteriaReleaseType()).toHaveValue('RELEASES');
+    expect(selectors.getCriteriaAssetRegexCheckbox()).toHaveClass('tm-checked');
+    expect(criteriaAssetRegex()).toHaveValue('.*');
     expect(saveButton()).toHaveClass('disabled');
   });
 
@@ -160,6 +177,43 @@ describe('CleanupPoliciesForm', function() {
     expect(saveButton()).not.toHaveClass('disabled');
   });
 
+  it('does not allow decimal values in lastBlobUpdated fields' , async function() {
+    const {loadingMask, name, format, saveButton, criteriaLastBlobUpdated, container} = renderCreateView();
+
+    await waitForElementToBeRemoved(loadingMask);
+    expect(saveButton()).toHaveClass('disabled');
+
+    await TestUtils.changeField(name, 'name');
+    await TestUtils.changeField(format, 'testformat')
+    const lastBlobCheckbox = container.querySelector('#criteria-last-blob-updated-group .nx-radio-checkbox');
+
+    fireEvent.click(lastBlobCheckbox);
+    await TestUtils.changeField(criteriaLastBlobUpdated, '4');
+    expect(saveButton()).not.toHaveClass('disabled');
+
+    await TestUtils.changeField(criteriaLastBlobUpdated, '4.7');
+    expect(saveButton()).toHaveClass('disabled');
+
+  });
+
+  it('does not allow decimal values in lastDownloaded fields' , async function() {
+    const {loadingMask, name, format, saveButton, criteriaLastDownloaded, container} = renderCreateView();
+
+    await waitForElementToBeRemoved(loadingMask);
+    expect(saveButton()).toHaveClass('disabled');
+
+    await TestUtils.changeField(name, 'name');
+    await TestUtils.changeField(format, 'testformat')
+    const lastDownloadedCheckbox = container.querySelector('#criteria-last-downloaded-group .nx-radio-checkbox');
+
+    fireEvent.click(lastDownloadedCheckbox);
+    await TestUtils.changeField(criteriaLastDownloaded, '5');
+    expect(saveButton()).not.toHaveClass('disabled');
+
+    await TestUtils.changeField(criteriaLastDownloaded, '5.3');
+    expect(saveButton()).toHaveClass('disabled');
+  });
+
   it('fires onDone when cancelled', async function() {
     const {loadingMask, cancelButton} = renderCreateView();
 
@@ -173,15 +227,7 @@ describe('CleanupPoliciesForm', function() {
   it('requests confirmation when delete is requested', async function() {
     const itemId = 'test';
     when(axios.get).calledWith(EDIT_URL(itemId)).mockResolvedValue({
-      data: {
-        'name' : 'test',
-        'format' : 'testformat',
-        'notes' : 'test notes',
-        'criteriaLastBlobUpdated' : '7',
-        'criteriaLastDownloaded' : '8',
-        'criteriaReleaseType' : 'RELEASES',
-        'criteriaAssetRegex' : '.*'
-      }
+      data: {...EDITABLE_ITEM}
     });
 
     axios.delete.mockReturnValue(Promise.resolve());
@@ -219,14 +265,82 @@ describe('CleanupPoliciesForm', function() {
 
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
         '/service/rest/internal/cleanup-policies',
-        {name: 'test', format: 'testformat', notes: 'notes'}
+        {
+          name: 'test',
+          format: 'testformat',
+          notes: 'notes',
+          criteriaAssetRegex: null,
+          criteriaLastBlobUpdated: null,
+          criteriaLastDownloaded: null,
+          criteriaReleaseType: null
+        }
     ));
     expect(window.dirty).toEqual([]);
   });
 
+  it('resets data fields when disable checkboxes', async function() {
+    const {container,
+      loadingMask,
+      criteriaLastBlobUpdated,
+      criteriaLastDownloaded,
+      criteriaReleaseType,
+      criteriaAssetRegex,
+      saveButton} = renderEditView(EDITABLE_ITEM.name);
+
+    await waitForElementToBeRemoved(loadingMask);
+
+    expect(criteriaLastBlobUpdated()).not.toBeDisabled();
+    expect(criteriaLastDownloaded()).not.toBeDisabled();
+    expect(criteriaReleaseType()).not.toBeDisabled();
+    expect(criteriaAssetRegex()).not.toBeDisabled();
+
+    userEvent.selectOptions(criteriaReleaseType(), '');
+    expect(criteriaReleaseType()).toHaveValue('');
+
+    const lastBlobCheckbox = container.querySelector('#criteria-last-blob-updated-group .nx-radio-checkbox');
+    const lastDownloadedCheckbox = container.querySelector('#criteria-last-downloaded-group .nx-radio-checkbox');
+    const releaseTypeCheckbox = container.querySelector('#criteria-release-type-group .nx-radio-checkbox');
+    const assetNameCheckbox = container.querySelector('#criteria-asset-name-group .nx-radio-checkbox');
+
+    fireEvent.click(lastBlobCheckbox);
+    fireEvent.click(lastDownloadedCheckbox);
+    fireEvent.click(releaseTypeCheckbox);
+    fireEvent.click(assetNameCheckbox);
+
+    expect(criteriaLastBlobUpdated()).toBeDisabled();
+    expect(criteriaLastDownloaded()).toBeDisabled();
+    expect(criteriaReleaseType()).toBeDisabled();
+    expect(criteriaAssetRegex()).toBeDisabled();
+
+    expect(saveButton()).not.toHaveClass('disabled');
+
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalledWith(
+      '/service/rest/internal/cleanup-policies/' + EDITABLE_ITEM.name,
+      {
+        criteriaAssetRegex: null,
+        criteriaLastBlobUpdated: null,
+        criteriaLastDownloaded: null,
+        criteriaReleaseType: null,
+        format: EDITABLE_ITEM.format,
+        name: EDITABLE_ITEM.name,
+        notes: EDITABLE_ITEM.notes
+      }
+    ));
+  });
+
   describe('preview', function() {
     it('submits the filter text to the backend', async function() {
-      const {loadingMask, previewButton, previewFilterText, previewRepositories, queryByText} = renderEditView(EDITABLE_ITEM.name);
+      const {
+        loadingMask, 
+        previewButton, 
+        previewFilterText, 
+        previewRepositories, 
+        previewSampleWarning,
+        previewCmpCount,
+        queryByText
+      } = renderEditView(EDITABLE_ITEM.name);
 
       await waitForElementToBeRemoved(loadingMask);
 
@@ -260,6 +374,9 @@ describe('CleanupPoliciesForm', function() {
 
       expect(queryByText('maven-aether-provider')).toBeInTheDocument();
 
+      expect(previewSampleWarning()).toBeInTheDocument();
+      expect(previewCmpCount(1, 1)).toBeInTheDocument();
+
       when(axios.post).calledWith(PREVIEW_URL, {
         criteriaLastBlobUpdated: EDITABLE_ITEM.criteriaLastBlobUpdated,
         criteriaLastDownloaded: EDITABLE_ITEM.criteriaLastDownloaded,
@@ -279,6 +396,82 @@ describe('CleanupPoliciesForm', function() {
       await waitForElementToBeRemoved(() => queryByText('maven-aether-provider'));
 
       expect(queryByText('No assets in repository matched the criteria')).toBeInTheDocument();
+
+      expect(previewSampleWarning()).not.toBeInTheDocument();
+    });
+
+    it('clears preview results when the cleanup policies form is changed', async function() {
+      const {
+        loadingMask,
+        format,
+        previewButton,
+        previewRepositories,
+        previewSampleWarning,
+        previewCmpCount,
+        queryByText
+      } = renderEditView(EDITABLE_ITEM.name);
+
+      await waitForElementToBeRemoved(loadingMask);
+
+      await TestUtils.changeField(previewRepositories, 'maven-central');
+
+      when(axios.post).calledWith(PREVIEW_URL, {
+        criteriaLastBlobUpdated: EDITABLE_ITEM.criteriaLastBlobUpdated,
+        criteriaLastDownloaded: EDITABLE_ITEM.criteriaLastDownloaded,
+        criteriaReleaseType: EDITABLE_ITEM.criteriaReleaseType,
+        criteriaAssetRegex: EDITABLE_ITEM.criteriaAssetRegex,
+        filter: '',
+        repository: 'maven-central'
+      }).mockResolvedValueOnce({
+        data: {
+          total: 1,
+          results: [{
+            id: null,
+            repository: 'maven-central',
+            format: 'maven2',
+            group: 'org.apache.maven',
+            name: 'maven-aether-provider',
+            version: '3.0',
+            assets: null
+          }]
+        }
+      });
+
+      fireEvent.click(previewButton());
+
+      await waitForElementToBeRemoved(loadingMask);
+
+      expect(queryByText('maven-aether-provider')).toBeInTheDocument();
+      expect(selectors.getCriteriaLastBlobUpdatedCheckbox()).toHaveClass('tm-checked');
+      expect(selectors.getCriteriaLastDownloadedCheckbox()).toHaveClass('tm-checked');
+      expect(selectors.getCriteriaReleaseTypeCheckbox()).toHaveClass('tm-checked');
+      expect(selectors.getCriteriaAssetRegexCheckbox()).toHaveClass('tm-checked');
+
+      expect(previewSampleWarning()).toBeInTheDocument();
+      expect(previewCmpCount(1, 1)).toBeInTheDocument();
+
+      when(axios.post).calledWith(PREVIEW_URL, {
+        criteriaLastBlobUpdated: EDITABLE_ITEM.criteriaLastBlobUpdated,
+        criteriaLastDownloaded: EDITABLE_ITEM.criteriaLastDownloaded,
+        criteriaReleaseType: EDITABLE_ITEM.criteriaReleaseType,
+        criteriaAssetRegex: EDITABLE_ITEM.criteriaAssetRegex,
+        filter: 'test',
+        repository: 'maven-central'
+      }).mockResolvedValueOnce({
+        data: {
+          total: 0,
+          results: []
+        }
+      });
+
+      await TestUtils.changeField(format, 'testformat');
+
+      expect(selectors.getCriteriaLastBlobUpdatedCheckbox()).toHaveClass('tm-unchecked');
+      expect(selectors.getCriteriaLastDownloadedCheckbox()).toHaveClass('tm-unchecked');
+      expect(selectors.getCriteriaReleaseTypeCheckbox()).toHaveClass('tm-unchecked');
+      expect(selectors.getCriteriaAssetRegexCheckbox()).toHaveClass('tm-unchecked');
+      expect(queryByText('No assets in repository matched the criteria')).toBeInTheDocument();
+      expect(previewSampleWarning()).not.toBeInTheDocument();
     });
   });
 });

@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.sonatype.nexus.testsuite</groupId>
     <artifactId>nexus-testsuite</artifactId>
-    <version>3.36.0-SNAPSHOT</version>
+    <version>3.42.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>nexus-repository-testsupport</artifactId>
@@ -53,6 +53,22 @@
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-repository-services</artifactId>
       <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.sonatype.nexus.plugins</groupId>
+      <artifactId>nexus-blobstore-s3</artifactId>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>com.amazonaws</groupId>
+          <artifactId>aws-java-sdk-s3</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.amazonaws</groupId>
+          <artifactId>aws-java-sdk-core</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
     <dependency>
@@ -131,7 +147,7 @@
     </dependency>
 
     <dependency>
-      <groupId>com.github.dblock</groupId>
+      <groupId>com.github.oshi</groupId>
       <artifactId>oshi-core</artifactId>
     </dependency>
 
@@ -185,6 +201,20 @@
       <artifactId>quartz</artifactId>
     </dependency>
 
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-java-sdk-core</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-java-sdk-s3</artifactId>
+    </dependency>
   </dependencies>
 
   <build>
@@ -233,8 +263,13 @@
               org.sonatype.nexus.repository.attributes.*;resolution:=optional,
               org.sonatype.nexus.repository.vulnerability.*;resolution:=optional,
               org.sonatype.nexus.testsuite.testsupport.cleanup.*;resolution:=optional,
+              oshi.*;resolution:=optional,
               *
             </Import-Package>
+            <Embed-Dependency>
+              aws-java-sdk-s3,aws-java-sdk-core
+            </Embed-Dependency>
+            <Embed-Transitive>true</Embed-Transitive>
           </instructions>
         </configuration>
       </plugin>

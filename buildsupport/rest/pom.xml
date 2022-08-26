@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.sonatype.nexus.buildsupport</groupId>
     <artifactId>nexus-buildsupport</artifactId>
-    <version>3.36.0-SNAPSHOT</version>
+    <version>3.42.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>nexus-buildsupport-rest</artifactId>
@@ -28,9 +28,15 @@
   <packaging>pom</packaging>
 
   <properties>
-    <jackson2.version>2.11.4</jackson2.version>
+    <jackson2.version>2.13.2</jackson2.version>
+    <jackson2.databind.version>2.13.2.1</jackson2.databind.version>
+    <!-- The behavior of the jackson-dataformat-yaml has changed in 2.12.3
+         and it breaks the com.sonatype.repository.helm.internal.util.YamlParser class
+         (and its tests in com.sonatype.repository.helm.internal.util.YamlParserTest).
+    -->
+    <jackson2.yaml.version>2.12.2</jackson2.yaml.version>
     <jaxb.version>2.3.3</jaxb.version>
-    <resteasy.version>3.15.1.Final</resteasy.version>
+    <resteasy.version>3.15.3.Final</resteasy.version>
     <swagger.version>1.6.2</swagger.version>
     <snakeyaml.version>1.28</snakeyaml.version>
   </properties>
@@ -84,7 +90,7 @@
       <dependency>
         <groupId>com.thoughtworks.xstream</groupId>
         <artifactId>xstream</artifactId>
-        <version>1.4.18</version>
+        <version>1.4.19</version>
         <exclusions>
           <exclusion>
             <groupId>xmlpull</groupId>
@@ -140,12 +146,6 @@
             <artifactId>reflections</artifactId>
           </exclusion>
         </exclusions>
-      </dependency>
-
-      <dependency>
-        <groupId>org.webjars</groupId>
-        <artifactId>swagger-ui</artifactId>
-        <version>3.48.0</version>
       </dependency>
 
       <!--
@@ -243,7 +243,7 @@
       <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
         <artifactId>jackson-databind</artifactId>
-        <version>${jackson2.version}</version>
+        <version>${jackson2.databind.version}</version>
       </dependency>
 
       <dependency>
@@ -297,7 +297,7 @@
       <dependency>
         <groupId>com.fasterxml.jackson.dataformat</groupId>
         <artifactId>jackson-dataformat-yaml</artifactId>
-        <version>${jackson2.version}</version>
+        <version>${jackson2.yaml.version}</version>
       </dependency>
 
       <dependency>

@@ -17,7 +17,7 @@
 import {assign} from 'xstate';
 import Axios from 'axios';
 
-import {ExtJS, Utils} from '@sonatype/nexus-ui-plugin';
+import {ExtJS, Utils, ValidationUtils} from '@sonatype/nexus-ui-plugin';
 
 import UIStrings from '../../../../constants/UIStrings';
 
@@ -28,33 +28,13 @@ function isEdit({name}) {
   return Utils.notBlank(name);
 }
 
-function validateNameField(field) {
-  if (Utils.isBlank(field)) {
-    return UIStrings.ERROR.FIELD_REQUIRED;
-  }
-  else if (field.length > 255) {
-    return UIStrings.ERROR.MAX_CHARS(255);
-  }
-  else if (!Utils.isName(field)) {
-    return UIStrings.ERROR.INVALID_NAME_CHARS;
-  }
-
-  return null;
-}
-
 function validateCriteriaNumberField(enabled, field) {
   if (enabled) {
     if (Utils.isBlank(field)) {
       return UIStrings.ERROR.FIELD_REQUIRED;
     }
-    else if (isNaN(field)) {
-      return UIStrings.ERROR.NAN;
-    }
-    else if (parseInt(field) < 1) {
-      return UIStrings.ERROR.MIN(1);
-    }
-    else if (parseInt(field) > 24855) {
-      return UIStrings.ERROR.MAX(24855);
+    else {
+      return ValidationUtils.isInRange({value: field, min:1, max:24855, allowDecimals:false});
     }
   }
 
@@ -101,6 +81,10 @@ export default Utils.buildFormMachine({
           SET_CRITERIA_ASSET_REGEX_ENABLED: {
             target: 'loaded',
             actions: ['setCriteriaAssetRegexEnabled']
+          },
+          UPDATE: {
+            ...config.states.loaded.on.UPDATE,
+            actions: [...config.states.loaded.on.UPDATE.actions, 'clearCriteria']
           }
         }
       }
@@ -115,7 +99,7 @@ export default Utils.buildFormMachine({
   actions: {
     validate: assign({
       validationErrors: ({data, criteriaLastDownloadedEnabled, criteriaLastBlobUpdatedEnabled, criteriaReleaseTypeEnabled, criteriaAssetRegexEnabled}) => ({
-        name: validateNameField(data.name),
+        name: ValidationUtils.validateNameField(data.name),
         format: Utils.isBlank(data.format) ? UIStrings.ERROR.FIELD_REQUIRED : null,
         criteriaLastDownloaded: validateCriteriaNumberField(criteriaLastDownloadedEnabled, data.criteriaLastDownloaded),
         criteriaLastBlobUpdated: validateCriteriaNumberField(criteriaLastBlobUpdatedEnabled, data.criteriaLastBlobUpdated),
@@ -145,7 +129,27 @@ export default Utils.buildFormMachine({
       criteriaAssetRegexEnabled: (_, event) => event.data?.data.criteriaAssetRegex
     }),
 
-    onDeleteError: ({data}) => ExtJS.showErrorMessage(UIStrings.CLEANUP_POLICIES.MESSAGES.DELETE_ERROR(data.name))
+    clearCriteria: assign((ctx, event) => {
+      if (event.data.format !== ctx.format) {
+        return {
+          ...ctx,
+          data: {
+            ...ctx.data,
+            criteriaLastBlobUpdated: null,
+            criteriaLastDownloaded: null,
+            criteriaReleaseType: null,
+            criteriaAssetRegex: null
+          },
+          criteriaLastDownloadedEnabled: false,
+          criteriaLastBlobUpdatedEnabled: false,
+          criteriaReleaseTypeEnabled: false,
+          criteriaAssetRegexEnabled: false
+        };
+      }
+      return ctx;
+    }),
+
+    onDeleteError: ({data}) => ExtJS.showErrorMessage(UIStrings.CLEANUP_POLICIES.MESSAGES.DELETE_ERROR(data.name)),
   },
   guards: {
     isEdit: ({pristineData}) => isEdit(pristineData),

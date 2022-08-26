@@ -174,7 +174,7 @@ public class MetadataBuilder
         }));
   }
 
-  private void addBaseVersion(final String baseVersion) {
+  public void addBaseVersion(final String baseVersion) {
     checkNotNull(baseVersion);
     try {
       if (baseVersions.add(versionScheme.parseVersion(baseVersion))) {
@@ -284,7 +284,7 @@ public class MetadataBuilder
       return;
     }
     if (Objects.equals(coordinates.getBaseVersion(), coordinates.getVersion())) {
-      log.warn("Non-timestamped snapshot, ignoring it: {}", mavenPath);
+      log.debug("Non-timestamped snapshot, ignoring it: {}", mavenPath);
       return;
     }
 

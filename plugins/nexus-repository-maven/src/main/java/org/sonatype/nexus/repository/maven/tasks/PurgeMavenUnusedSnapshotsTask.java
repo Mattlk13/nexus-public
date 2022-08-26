@@ -12,14 +12,19 @@
  */
 package org.sonatype.nexus.repository.maven.tasks;
 
+import java.util.Objects;
 import javax.inject.Inject;
 import javax.inject.Named;
 
+import org.sonatype.nexus.content.maven.MavenContentFacet;
 import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.RepositoryTaskSupport;
 import org.sonatype.nexus.repository.Type;
+import org.sonatype.nexus.repository.config.Configuration;
+import org.sonatype.nexus.repository.maven.MavenFacet;
 import org.sonatype.nexus.repository.maven.PurgeUnusedSnapshotsFacet;
+import org.sonatype.nexus.repository.maven.VersionPolicy;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.repository.types.HostedType;
@@ -39,6 +44,10 @@ public class PurgeMavenUnusedSnapshotsTask
 {
   public static final String LAST_USED_FIELD_ID = "lastUsed";
 
+  private static final String MAVEN = "maven";
+
+  private static final String VERSION_POLICY = "versionPolicy";
+
   private final Type groupType;
 
   private final Type hostedType;
@@ -46,9 +55,10 @@ public class PurgeMavenUnusedSnapshotsTask
   private final Format maven2Format;
 
   @Inject
-  public PurgeMavenUnusedSnapshotsTask(@Named(GroupType.NAME) final Type groupType,
-                                       @Named(HostedType.NAME) final Type hostedType,
-                                       @Named(Maven2Format.NAME) final Format maven2Format)
+  public PurgeMavenUnusedSnapshotsTask(
+      @Named(GroupType.NAME) final Type groupType,
+      @Named(HostedType.NAME) final Type hostedType,
+      @Named(Maven2Format.NAME) final Format maven2Format)
   {
     this.groupType = checkNotNull(groupType);
     this.hostedType = checkNotNull(hostedType);
@@ -63,8 +73,23 @@ public class PurgeMavenUnusedSnapshotsTask
 
   @Override
   protected boolean appliesTo(final Repository repository) {
+    return hasExpectedFormat(repository) && !isReleaseRepo(repository);
+  }
+
+  /**
+   * Validates if the passed repository has the expected format to run the task
+   *
+   * @param repository the repository to be validated
+   * @return a {@link Boolean} flag representing if the format is valid or not
+   */
+  private boolean hasExpectedFormat(final Repository repository) {
     return maven2Format.equals(repository.getFormat())
         && (hostedType.equals(repository.getType()) || groupType.equals(repository.getType()));
+  }
+
+  private boolean isReleaseRepo(final Repository repository) {
+    VersionPolicy versionPolicy = repository.facet(MavenFacet.class).getVersionPolicy();
+    return VersionPolicy.RELEASE.equals(versionPolicy);
   }
 
   @Override

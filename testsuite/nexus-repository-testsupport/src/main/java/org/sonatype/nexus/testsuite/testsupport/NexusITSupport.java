@@ -100,11 +100,16 @@ import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_DEVELOPER;
 
 /**
  * Support for Nexus integration tests.
+ *
+ * @deprecated Please write new tests using {@link NexusBaseITSupport}
  */
+@Deprecated
 public abstract class NexusITSupport
     extends NexusPaxExamSupport
 {
   protected static final String DEFAULT_SESSION_COOKIE_NAME = "NXSESSIONID";
+
+  protected static final String DEFAULT_JWT_COOKIE_NAME = "NXJWT";
 
   protected static final String REST_SERVICE_PATH = "service/rest";
 
@@ -326,12 +331,38 @@ public abstract class NexusITSupport
   }
 
   /**
+   * @return our jwt cookie; {@code null} if it doesn't exist
+   */
+  @Nullable
+  protected Cookie getJwtCookie(final CookieStore cookieStore) {
+    for (Cookie cookie : cookieStore.getCookies()) {
+      if (DEFAULT_JWT_COOKIE_NAME.equals(cookie.getName())) {
+        return cookie;
+      }
+    }
+    return null;
+  }
+
+  /**
    * @return the header containing our session cookie; {@code null} if it doesn't exist
    */
   @Nullable
   protected Header getSessionCookieHeader(@Nonnull final Header[] headers) {
     for (Header header : headers) {
       if (header.getValue().startsWith(DEFAULT_SESSION_COOKIE_NAME + "=")) {
+        return header;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * @return the header containing our jwt cookie; {@code null} if it doesn't exist
+   */
+  @Nullable
+  protected Header getJwtCookieHeader(@Nonnull final Header[] headers) {
+    for (Header header : headers) {
+      if (header.getValue().startsWith(DEFAULT_JWT_COOKIE_NAME + "=")) {
         return header;
       }
     }

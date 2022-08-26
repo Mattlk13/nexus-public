@@ -31,7 +31,8 @@ Ext.define('NX.coreui.view.repository.facet.DockerConnectorFacet', {
    * @override
    */
   initComponent: function() {
-    var me = this;
+    var me = this,
+        subdomainVisibility = (NX.State.getEdition() === 'PRO');
 
     me.items = [
       {
@@ -58,6 +59,16 @@ Ext.define('NX.coreui.view.repository.facet.DockerConnectorFacet', {
               }
             ]
           },
+          subdomainVisibility ? {
+            xtype: 'fieldcontainer',
+            fieldLabel: NX.I18n.get('Repository_Facet_Docker_Subdomain_FieldLabel'),
+            helpText: NX.I18n.get('Repository_Facet_Docker_Subdomain_HelpText'),
+            layout: 'hbox',
+            items: [
+              me.createCheckbox('subdomain'),
+              me.createSubdomain('subdomain')
+            ]
+          } : undefined,
           {
             xtype: 'fieldcontainer',
             fieldLabel: NX.I18n.get('Repository_Facet_DockerConnectorFacet_HttpPort_FieldLabel'),
@@ -146,6 +157,7 @@ Ext.define('NX.coreui.view.repository.facet.DockerConnectorFacet', {
     return {
       xtype: 'checkbox',
       itemId: type + 'Enabled',
+      name: 'dockercheckbox' + type,
       listeners: {
         /**
          * Enable/Disable the port.
@@ -176,7 +188,7 @@ Ext.define('NX.coreui.view.repository.facet.DockerConnectorFacet', {
       allowExponential: false,
       allowBlank: false,
       disabled: true,
-      width: 565,
+      width: 560,
       style: {
         marginLeft: '5px'
       },
@@ -189,6 +201,39 @@ Ext.define('NX.coreui.view.repository.facet.DockerConnectorFacet', {
           if (this.getValue() && !checkbox.getValue()) {
             checkbox.setValue(true);
             checkbox.resetOriginalValue();
+          }
+        }
+      }
+    };
+  },
+
+  createSubdomain: function(type) {
+    return {
+      xtype: 'textfield',
+      name: 'attributes.docker.subdomain',
+      itemId: type + 'Port',
+      allowBlank: false,
+      disabled: true,
+      width: 560,
+      vtype: 'nx-subdomain',
+      style: {
+        marginLeft: '5px'
+      },
+      listeners: {
+        /**
+         * Check the checkbox if subdomain has value.
+         */
+        change: function() {
+          var checkbox = this.up('form').down('#' + type + 'Enabled');
+          if (this.getValue() && !checkbox.getValue()) {
+            checkbox.setValue(true);
+            checkbox.resetOriginalValue();
+          }
+        },
+        enable: function() {
+          if (this.getValue() === '') {
+            const repositoryName = this.up('form').down('#name').value;
+            this.setValue(repositoryName);
           }
         }
       }

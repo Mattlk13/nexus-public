@@ -15,6 +15,7 @@ package org.sonatype.nexus.repository.rest.api
 import javax.annotation.Nullable
 
 import org.sonatype.nexus.repository.Repository
+import org.sonatype.nexus.repository.search.AssetSearchResult
 
 import com.fasterxml.jackson.annotation.JsonAnyGetter
 import com.fasterxml.jackson.annotation.JsonIgnore
@@ -22,12 +23,13 @@ import groovy.transform.CompileStatic
 import groovy.transform.EqualsAndHashCode
 import groovy.transform.ToString
 import groovy.transform.builder.Builder
+import org.apache.commons.lang.StringUtils
 
 import static org.sonatype.nexus.repository.search.index.SearchConstants.ATTRIBUTES
 import static org.sonatype.nexus.repository.search.index.SearchConstants.CHECKSUM
+import static org.sonatype.nexus.repository.search.index.SearchConstants.CONTENT_TYPE
 import static org.sonatype.nexus.repository.search.index.SearchConstants.ID
 import static org.sonatype.nexus.repository.search.index.SearchConstants.NAME
-import static org.sonatype.nexus.repository.search.index.SearchConstants.CONTENT_TYPE
 
 /**
  * Asset transfer object for REST APIs.
@@ -56,8 +58,36 @@ class AssetXO
 
   Date lastModified
 
+  Date lastDownloaded
+
+  String uploader
+
+  String uploaderIp
+
+  long fileSize
+
   @JsonIgnore
   Map attributes
+
+  static AssetXO from(
+      AssetSearchResult asset,
+      Repository repository,
+      @Nullable final Map<String, AssetXODescriptor> assetDescriptors)
+  {
+    return builder()
+        .path(asset.getPath())
+        .downloadUrl(repository.url + '/' + StringUtils.removeStart(asset.getPath(), "/"))
+        .id(new RepositoryItemIDXO(repository.getName(), asset.getId()).getValue())
+        .repository(repository.getName())
+        .checksum(asset.getChecksum())
+        .format(asset.getFormat())
+        .contentType(asset.getContentType())
+        .attributes(getExpandedAttributes(asset.getAttributes(), asset.getFormat(), assetDescriptors))
+        .lastModified(asset.getLastModified())
+        .uploader(asset.getUploader())
+        .uploaderIp(asset.getUploaderIp())
+        .build()
+  }
 
   static AssetXO fromElasticSearchMap(final Map map, final Repository repository,
                                       @Nullable final Map<String, AssetXODescriptor> assetDescriptors)

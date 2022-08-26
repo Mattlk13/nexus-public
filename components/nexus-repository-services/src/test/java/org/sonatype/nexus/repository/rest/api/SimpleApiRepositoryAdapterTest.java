@@ -31,6 +31,7 @@ import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.Type;
 import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.config.ConfigurationConstants;
+import org.sonatype.nexus.repository.db.DatabaseCheck;
 import org.sonatype.nexus.repository.manager.internal.RepositoryImpl;
 import org.sonatype.nexus.repository.rest.api.model.AbstractApiRepository;
 import org.sonatype.nexus.repository.rest.api.model.CleanupPolicyAttributes;
@@ -54,7 +55,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.COMPONENT;
@@ -70,10 +71,15 @@ public class SimpleApiRepositoryAdapterTest
   @Mock
   private RoutingRuleStore routingRuleStore;
 
+  @Mock
+  private DatabaseCheck databaseCheck;
+
   @Before
   public void setup() {
     underTest = new SimpleApiRepositoryAdapter(routingRuleStore);
+    underTest.setDatabaseCheck(databaseCheck);
     BaseUrlHolder.set("http://nexus-url", "");
+    when(databaseCheck.isPostgresql()).thenReturn(true);
   }
 
   @Test
@@ -365,7 +371,7 @@ public class SimpleApiRepositoryAdapterTest
     repository.update(configuration);
   }
 
-  private static class SimpleConfiguration
+  static class SimpleConfiguration
       implements Configuration
   {
     private String repositoryName;

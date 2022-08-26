@@ -36,7 +36,7 @@ import org.sonatype.nexus.repository.browse.internal.orient.BrowseNodeEntityAdap
 import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.config.ConfigurationFacet;
 import org.sonatype.nexus.repository.mime.DefaultContentValidator;
-import org.sonatype.nexus.repository.search.SearchFacet;
+import org.sonatype.nexus.repository.search.ElasticSearchFacet;
 import org.sonatype.nexus.repository.storage.internal.ComponentSchemaRegistration;
 import org.sonatype.nexus.security.ClientInfoProvider;
 import org.sonatype.nexus.validation.ConstraintViolationFactory;
@@ -56,6 +56,7 @@ import org.junit.Test;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Collections.emptySet;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
@@ -64,10 +65,8 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.joda.time.Duration.standardHours;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.common.entity.EntityHelper.id;
@@ -127,7 +126,7 @@ public class StorageFacetImplIT
     StorageFacetImpl.Config config = new StorageFacetImpl.Config();
     ConfigurationFacet configurationFacet = mock(ConfigurationFacet.class);
     when(configurationFacet.readSection(
-        any(Configuration.class),
+        nullable(Configuration.class),
         eq(STORAGE),
         eq(StorageFacetImpl.Config.class)))
         .thenReturn(config);
@@ -135,12 +134,12 @@ public class StorageFacetImplIT
     when(testRepository1.getName()).thenReturn("test-repository-1");
     when(testRepository1.getFormat()).thenReturn(testFormat);
     when(testRepository1.facet(ConfigurationFacet.class)).thenReturn(configurationFacet);
-    when(testRepository1.facet(SearchFacet.class)).thenReturn(mock(SearchFacet.class));
+    when(testRepository1.facet(ElasticSearchFacet.class)).thenReturn(mock(ElasticSearchFacet.class));
 
     when(testRepository2.getName()).thenReturn("test-repository-2");
     when(testRepository2.getFormat()).thenReturn(testFormat);
     when(testRepository2.facet(ConfigurationFacet.class)).thenReturn(configurationFacet);
-    when(testRepository2.facet(SearchFacet.class)).thenReturn(mock(SearchFacet.class));
+    when(testRepository2.facet(ElasticSearchFacet.class)).thenReturn(mock(ElasticSearchFacet.class));
 
     underTest = storageFacetImpl("testNodeId", bucketEntityAdapter, componentEntityAdapter, assetEntityAdapter, testRepository1);
   }
@@ -847,7 +846,7 @@ public class StorageFacetImplIT
     NodeAccess mockNodeAccess = mock(NodeAccess.class);
     when(mockNodeAccess.getId()).thenReturn(nodeId);
     BlobStoreManager mockBlobStoreManager = mock(BlobStoreManager.class);
-    when(mockBlobStoreManager.get(anyString())).thenReturn(mock(BlobStore.class));
+    when(mockBlobStoreManager.get(nullable(String.class))).thenReturn(mock(BlobStore.class));
     ContentValidatorSelector contentValidatorSelector =
         new ContentValidatorSelector(Collections.emptyMap(), new DefaultContentValidator(new DefaultMimeSupport()));
     MimeRulesSourceSelector mimeRulesSourceSelector = new MimeRulesSourceSelector(Collections.emptyMap());

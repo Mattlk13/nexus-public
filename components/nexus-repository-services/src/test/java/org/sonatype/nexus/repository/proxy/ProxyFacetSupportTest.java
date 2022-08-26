@@ -14,6 +14,7 @@ package org.sonatype.nexus.repository.proxy;
 
 import java.io.IOException;
 import java.net.URI;
+import java.time.Duration;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -21,6 +22,9 @@ import javax.annotation.Nullable;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.collect.AttributesMap;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
+import org.sonatype.nexus.common.cooperation2.datastore.DefaultCooperation2Factory;
+import org.sonatype.nexus.common.event.EventManager;
+import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.MissingBlobException;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.cache.CacheController;
@@ -32,6 +36,7 @@ import org.sonatype.nexus.repository.httpclient.HttpClientFacet;
 import org.sonatype.nexus.repository.httpclient.RemoteBlockedIOException;
 import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.Context;
+import org.sonatype.nexus.repository.view.Request;
 import org.sonatype.nexus.transaction.RetryDeniedException;
 
 import org.apache.http.HttpResponse;
@@ -43,12 +48,9 @@ import org.apache.http.client.utils.HttpClientUtils;
 import org.apache.http.message.BasicHttpResponse;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.mockito.Mockito;
+import org.mockito.MockedStatic;
 import org.mockito.Spy;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
 
 import static java.util.Collections.singletonMap;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -56,23 +58,21 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
-import static org.powermock.api.mockito.PowerMockito.mockStatic;
-import static org.powermock.api.mockito.PowerMockito.verifyNoMoreInteractions;
-import static org.powermock.api.mockito.PowerMockito.verifyStatic;
 import static org.sonatype.nexus.repository.proxy.ProxyFacetSupport.BYPASS_HTTP_ERRORS_HEADER_NAME;
 import static org.sonatype.nexus.repository.proxy.ProxyFacetSupport.BYPASS_HTTP_ERRORS_HEADER_VALUE;
 
 /**
  * Tests for the abstract class {@link ProxyFacetSupport}
  */
-@RunWith(PowerMockRunner.class)
 public class ProxyFacetSupportTest
     extends TestSupport
 {
@@ -114,6 +114,9 @@ public class ProxyFacetSupportTest
   Content reFetchedContent;
 
   @Mock
+  Content storedContent;
+
+  @Mock
   AttributesMap attributesMap;
 
   @Mock
@@ -134,6 +137,12 @@ public class ProxyFacetSupportTest
   @Mock
   Repository repository;
 
+  @Mock
+  EventManager eventManager;
+
+  @Mock
+  private Format format;
+
   @Before
   public void setUp() throws Exception {
     when(content.getAttributes()).thenReturn(attributesMap);
@@ -144,10 +153,21 @@ public class ProxyFacetSupportTest
 
     when(cachedContext.getRepository()).thenReturn(repository);
 
+    Request request = mock(Request.class);
+    when(cachedContext.getRequest()).thenReturn(request);
+
     when(missingContext.getRepository()).thenReturn(repository);
+    when(missingContext.getRequest()).thenReturn(request);
 
     underTest.cacheControllerHolder = cacheControllerHolder;
+    when(format.getValue()).thenReturn("raw");
+    when(repository.getFormat()).thenReturn(format);
+
+    underTest.installDependencies(eventManager);
     underTest.attach(repository);
+    underTest.configureCooperation(new DefaultCooperation2Factory(), false, Duration.ofSeconds(0),
+        Duration.ofSeconds(60), 10);
+    underTest.buildCooperation();
   }
 
   @Test
@@ -166,11 +186,11 @@ public class ProxyFacetSupportTest
     doReturn(content).when(underTest).getCachedContent(cachedContext);
 
     doReturn(reFetchedContent).when(underTest).fetch(cachedContext, content);
-    doReturn(reFetchedContent).when(underTest).store(cachedContext, reFetchedContent);
+    doReturn(storedContent).when(underTest).store(cachedContext, reFetchedContent);
 
     Content foundContent = underTest.get(cachedContext);
 
-    assertThat(foundContent, is(reFetchedContent));
+    assertThat(foundContent, is(storedContent));
   }
 
   @Test
@@ -247,11 +267,11 @@ public class ProxyFacetSupportTest
     doThrow(e).when(underTest).getCachedContent(cachedContext);
 
     doReturn(reFetchedContent).when(underTest).fetch(cachedContext, null);
-    doReturn(reFetchedContent).when(underTest).store(cachedContext, reFetchedContent);
+    doReturn(storedContent).when(underTest).store(cachedContext, reFetchedContent);
 
     Content foundContent = underTest.get(cachedContext);
 
-    assertThat(foundContent, is(reFetchedContent));
+    assertThat(foundContent, is(storedContent));
   }
 
   @Test(expected = RetryDeniedException.class)
@@ -305,26 +325,25 @@ public class ProxyFacetSupportTest
     doReturn(content).when(underTest).getCachedContent(cachedContext);
 
     doReturn(reFetchedContent).when(underTest).fetch(cachedContext, content);
-    doReturn(reFetchedContent).when(underTest).store(cachedContext, reFetchedContent);
+    doReturn(storedContent).when(underTest).store(cachedContext, reFetchedContent);
 
     Content foundContent = underTest.get(cachedContext);
 
-    assertThat(foundContent, is(reFetchedContent));
+    assertThat(foundContent, is(storedContent));
   }
 
-  @PrepareForTest(HttpClientUtils.class)
   @Test
   public void leak() throws Exception {
     HttpClientFacet httpClientFacet = mock(HttpClientFacet.class);
     HttpClient httpClient = mock(HttpClient.class);
     ConfigurationFacet configurationFacet = mock(ConfigurationFacet.class);
-    ProxyFacetSupport.Config config = new ProxyFacetSupport.Config();
+    ProxyFacetSupport.ProxyConfig config = new ProxyFacetSupport.ProxyConfig();
     config.remoteUrl = new URI("http://example.com");
 
     when(repository.facet(HttpClientFacet.class)).thenReturn(httpClientFacet);
     when(httpClientFacet.getHttpClient()).thenReturn(httpClient);
     when(repository.facet(ConfigurationFacet.class)).thenReturn(configurationFacet);
-    when(configurationFacet.readSection(any(Configuration.class), anyString(), eq(ProxyFacetSupport.Config.class)))
+    when(configurationFacet.readSection(any(Configuration.class), anyString(), eq(ProxyFacetSupport.ProxyConfig.class)))
         .thenReturn(config);
 
     HttpResponse httpResponse = new BasicHttpResponse(
@@ -333,27 +352,26 @@ public class ProxyFacetSupportTest
     doReturn("http://example.com").when(underTest).getUrl(cachedContext);
     doReturn(httpResponse).when(underTest).execute(eq(cachedContext), eq(httpClient), any(HttpRequestBase.class));
 
-    mockStatic(HttpClientUtils.class);
 
-    Configuration configuration = mock(Configuration.class);
-    when(configuration.attributes("proxy")).thenReturn(new NestedAttributesMap(
-        "proxy",
-        singletonMap("remoteUrl", "http://example.com")
-    ));
-    underTest.doConfigure(configuration);
-    underTest.doStart();
+    try (MockedStatic<HttpClientUtils> httpClientUtils = mockStatic(HttpClientUtils.class)) {
+      Configuration configuration = mock(Configuration.class);
+      when(configuration.attributes("proxy")).thenReturn(new NestedAttributesMap(
+          "proxy",
+          singletonMap("remoteUrl", "http://example.com")
+          ));
+      underTest.doConfigure(configuration);
+      underTest.doStart();
 
-    try {
-      underTest.get(cachedContext);
-      fail("Expected BypassHttpErrorException to be thrown");
+      try {
+        underTest.get(cachedContext);
+        fail("Expected BypassHttpErrorException to be thrown");
+      }
+      catch (BypassHttpErrorException expected) {
+        // expected
+      }
+
+      httpClientUtils.verify(() -> HttpClientUtils.closeQuietly(httpResponse), times(1));
     }
-    catch (BypassHttpErrorException expected) {
-      // expected
-    }
-
-    verifyStatic();
-    HttpClientUtils.closeQuietly(httpResponse);
-    verifyNoMoreInteractions(HttpClientUtils.class);
   }
 
   @Test

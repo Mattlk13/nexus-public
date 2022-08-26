@@ -14,13 +14,17 @@ package org.sonatype.nexus.repository.content.store;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.IntStream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobRef;
@@ -30,6 +34,8 @@ import org.sonatype.nexus.common.time.UTC;
 import org.sonatype.nexus.datastore.api.DataAccess;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.datastore.api.DuplicateKeyException;
+import org.sonatype.nexus.repository.config.ConfigurationDAO;
+import org.sonatype.nexus.repository.config.internal.ConfigurationData;
 import org.sonatype.nexus.repository.content.Asset;
 import org.sonatype.nexus.repository.content.AssetBlob;
 import org.sonatype.nexus.repository.content.Component;
@@ -48,6 +54,7 @@ import org.hamcrest.Description;
 import org.hamcrest.Matcher;
 import org.hamcrest.TypeSafeDiagnosingMatcher;
 import org.hamcrest.collection.IsIterableContainingInOrder;
+import org.jetbrains.annotations.NotNull;
 import org.junit.Rule;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -73,7 +80,8 @@ public class ExampleContentTestSupport
       .access(TestContentRepositoryDAO.class)
       .access(TestComponentDAO.class)
       .access(TestAssetBlobDAO.class)
-      .access(TestAssetDAO.class);
+      .access(TestAssetDAO.class)
+      .access(ConfigurationDAO.class);
 
   private Random random = new Random();
 
@@ -92,6 +100,8 @@ public class ExampleContentTestSupport
   private List<AssetBlobData> assetBlobs;
 
   private List<AssetData> assets;
+
+  private List<ConfigurationData> configurations;
 
   public ExampleContentTestSupport() {
     // do nothing
@@ -115,6 +125,10 @@ public class ExampleContentTestSupport
 
   protected List<Asset> generatedAssets() {
     return unmodifiableList(assets);
+  }
+
+  protected List<ConfigurationData> generatedConfigurations() {
+    return unmodifiableList(configurations);
   }
 
   protected void generateRandomNamespaces(final int maxNamespaces) {
@@ -161,6 +175,25 @@ public class ExampleContentTestSupport
     paths = ImmutableList.copyOf(uniquePaths);
   }
 
+  protected void generateConfiguration() {
+    final ConfigurationData configurationData = getConfigurationData();
+    if (doCommit(session -> session.access(ConfigurationDAO.class).create(configurationData))) {
+      configurations = Collections.singletonList(configurationData);
+    }
+  }
+
+  @NotNull
+  private ConfigurationData getConfigurationData() {
+    ConfigurationData configurationData = new ConfigurationData();
+    Map<String, Object> key = Collections.singletonMap("key", "value");
+    Map<String, Map<String, Object>> attributes = Collections.singletonMap("key", key);
+    configurationData.setAttributes(attributes);
+    configurationData.setName("repo-name");
+    configurationData.setOnline(true);
+    configurationData.setRecipeName("recipe");
+    return configurationData;
+  }
+
   protected void generateRandomRepositories(final int maxRepositories) {
     repositories = new ArrayList<>();
     while (repositories.size() < maxRepositories) {
@@ -168,6 +201,14 @@ public class ExampleContentTestSupport
       if (doCommit(session -> session.access(TestContentRepositoryDAO.class).createContentRepository(repository))) {
         repositories.add(repository);
       }
+    }
+  }
+
+  protected void generateSingleRepository(final UUID configRepositoryUUID) {
+    ContentRepositoryData repository = randomContentRepository();
+    repository.setConfigRepositoryId(new EntityUUID(configRepositoryUUID));
+    if (doCommit(session -> session.access(TestContentRepositoryDAO.class).createContentRepository(repository))) {
+      repositories = Collections.singletonList(repository);
     }
   }
 
@@ -205,6 +246,48 @@ public class ExampleContentTestSupport
     }
   }
 
+  // Generate the component with asset and blob
+  protected void generateContent(final int maxComponents) {
+    List<String> componentNames = new ArrayList<>(maxComponents);
+    IntStream
+        .range(0, maxComponents)
+        .forEach(i -> componentNames.add("component_name" + i));
+    generateContent(componentNames);
+  }
+
+  // Generate the components with asset and blob
+  protected void generateContent(final List<String> componentNames) {
+    int maxComponents = componentNames.size();
+    components = new ArrayList<>(maxComponents);
+    for (String componentName : componentNames) {
+      int repositoryId = repositories.get(random.nextInt(repositories.size())).repositoryId;
+      ComponentData component = randomComponent(repositoryId, componentName);
+      if (doCommit(session -> session.access(TestComponentDAO.class).createComponent(component))) {
+        components.add(component);
+      }
+    }
+
+    assets = new ArrayList<>(maxComponents);
+    assetBlobs = new ArrayList<>(maxComponents);
+    for (ComponentData component : components) {
+      AssetData asset = generateAsset(component.repositoryId, "/" + UUID.randomUUID());
+      asset.setAssetId(component.componentId);
+      asset.setComponent(component);
+
+      if (doCommit(session -> session.access(TestAssetDAO.class).createAsset(asset))) {
+        assets.add(asset);
+        AssetBlobData assetBlob = randomAssetBlob();
+        if (doCommit(session -> {
+          session.access(TestAssetBlobDAO.class).createAssetBlob(assetBlob);
+          asset.setAssetBlob(assetBlob);
+          session.access(TestAssetDAO.class).updateAssetBlobLink(asset);
+        })) {
+          assetBlobs.add(assetBlob);
+        }
+      }
+    }
+  }
+
   protected ContentRepositoryData randomContentRepository() {
     ContentRepositoryData repository = new ContentRepositoryData();
     repository.setConfigRepositoryId(new EntityUUID(combUUID()));
@@ -213,6 +296,11 @@ public class ExampleContentTestSupport
   }
 
   protected ComponentData randomComponent(final int repositoryId) {
+    String name = names.get(random.nextInt(names.size()));
+    return randomComponent(repositoryId, name);
+  }
+
+  protected ComponentData randomComponent(final int repositoryId, final String name) {
     ComponentData component = new ComponentData();
     component.setRepositoryId(repositoryId);
     if (random.nextInt(100) > 10) {
@@ -221,7 +309,7 @@ public class ExampleContentTestSupport
     else {
       component.setNamespace("");
     }
-    component.setName(names.get(random.nextInt(names.size())));
+    component.setName(name);
     if (random.nextInt(100) > 10) {
       component.setVersion(versions.get(random.nextInt(versions.size())));
     }
@@ -234,18 +322,22 @@ public class ExampleContentTestSupport
   }
 
   protected TestAssetData randomAsset(final int repositoryId) {
-    TestAssetData asset = new TestAssetData();
-    asset.setRepositoryId(repositoryId);
-    asset.setPath(paths.get(random.nextInt(paths.size())));
-    asset.setKind("test");
-    asset.setAttributes(newAttributes("asset"));
-    asset.setLastUpdated(OffsetDateTime.now());
-    return asset;
+    return generateAsset(repositoryId, paths.get(random.nextInt(paths.size())));
   }
 
   protected TestAssetData randomAsset(final int repositoryId, final String kind) {
     TestAssetData asset = randomAsset(repositoryId);
     asset.setKind(kind);
+    return asset;
+  }
+
+  protected TestAssetData generateAsset(final int repositoryId, final String path) {
+    TestAssetData asset = new TestAssetData();
+    asset.setRepositoryId(repositoryId);
+    asset.setPath(path);
+    asset.setKind("test");
+    asset.setAttributes(newAttributes("asset"));
+    asset.setLastUpdated(OffsetDateTime.now());
     return asset;
   }
 
@@ -344,7 +436,7 @@ public class ExampleContentTestSupport
           .map(v -> v != null ? is(v) : nullValue())
           .collect(toList());
 
-      @SuppressWarnings({ "unchecked", "rawtypes" })
+      @SuppressWarnings({"unchecked", "rawtypes"})
       // (use hamcrest class directly as javac picks the wrong static varargs method)
       boolean matches = new IsIterableContainingInOrder(matchers).matches(actualValues);
       if (!matches) {

@@ -17,6 +17,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -31,7 +32,9 @@ import javax.inject.Singleton;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.common.collect.AttributesMap;
+import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.common.entity.EntityHelper;
+import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.common.hash.HashAlgorithm;
 import org.sonatype.nexus.orient.DatabaseInstance;
 import org.sonatype.nexus.orient.DatabaseInstanceNames;
@@ -55,6 +58,7 @@ import org.sonatype.nexus.repository.view.Payload;
 import org.sonatype.nexus.repository.view.payloads.TempBlob;
 import org.sonatype.nexus.transaction.UnitOfWork;
 
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.hash.HashCode;
 import com.google.common.io.CharStreams;
@@ -70,7 +74,9 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.Assert.assertNotNull;
 import static org.sonatype.nexus.common.app.FeatureFlags.ORIENT_ENABLED;
+import static org.sonatype.nexus.repository.maven.MavenMetadataRebuildFacet.METADATA_FORCE_REBUILD;
 import static org.sonatype.nexus.repository.maven.internal.Attributes.P_BASE_VERSION;
 import static org.sonatype.nexus.repository.search.DefaultComponentMetadataProducer.GROUP;
 import static org.sonatype.nexus.repository.storage.MetadataNodeEntityAdapter.P_NAME;
@@ -248,7 +254,7 @@ public class OrientMavenTestHelper
   }
 
   @Override
-  public String createComponent(
+  public EntityId createComponent(
       final Repository repository,
       final String groupId,
       final String artifactId,
@@ -261,12 +267,15 @@ public class OrientMavenTestHelper
           .name(artifactId)
           .group(groupId)
           .version(version);
+      Map<String, Object> mavenAttr =
+          ImmutableMap.of("groupId", groupId, "artifactId", artifactId, "baseVersion", version);
+      component.attributes(new NestedAttributesMap("", Collections.singletonMap("maven2", mavenAttr)));
       storageTx.saveComponent(component);
       String path = String.format("%s/%s/%s/%s-%s.jar", groupId, artifactId, version, artifactId, version);
       Asset asset = storageTx.createAsset(bucket, component).name(path);
       storageTx.saveAsset(asset);
       storageTx.commit();
-      return EntityHelper.id(component).getValue();
+      return EntityHelper.id(component);
     }
   }
 
@@ -361,5 +370,18 @@ public class OrientMavenTestHelper
       }
     }
     return true;
+  }
+
+  @Override
+  public void markMetadataForRebuild(final Repository repository, final String path) {
+    StorageTx tx = repository.facet(StorageFacet.class).txSupplier().get();
+    tx.begin();
+    Bucket bucket = tx.findBucket(repository);
+    Asset metadataAsset = tx.findAssetWithProperty(P_NAME, path, bucket);
+    assertNotNull("Could not set forceRebuild flag, because requested path does not exist", metadataAsset);
+    metadataAsset.formatAttributes().set(METADATA_FORCE_REBUILD, true);
+    tx.saveAsset(metadataAsset);
+    tx.commit();
+    tx.close();
   }
 }

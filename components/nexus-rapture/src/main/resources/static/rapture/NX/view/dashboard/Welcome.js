@@ -29,6 +29,5 @@ Ext.define('NX.view.dashboard.Welcome', {
   ],
 
   cls: 'nx-iframe-full',
-  width: '100%',
-  layout: 'fit'
+  width: '100%'
 });

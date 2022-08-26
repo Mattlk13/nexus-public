@@ -12,11 +12,12 @@
  */
 import React from 'react';
 import {fireEvent, waitFor, waitForElementToBeRemoved} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {when} from 'jest-when';
+import {act} from "react-dom/test-utils";
 import '@testing-library/jest-dom/extend-expect';
-import TestUtils from '@sonatype/nexus-ui-plugin/src/frontend/src/interface/TestUtils';
 import axios from 'axios';
-import {ExtJS} from '@sonatype/nexus-ui-plugin';
+import {ExtJS, TestUtils} from '@sonatype/nexus-ui-plugin';
 
 import ContentSelectorsForm from './ContentSelectorsForm';
 
@@ -76,7 +77,8 @@ describe('ContentSelectorsForm', function() {
       expression: () => queryByLabelText(UIStrings.CONTENT_SELECTORS.EXPRESSION_LABEL),
       saveButton: () => queryByText(UIStrings.SETTINGS.SAVE_BUTTON_LABEL),
       cancelButton: () => queryByText(UIStrings.SETTINGS.CANCEL_BUTTON_LABEL),
-      deleteButton: () => queryByText(UIStrings.SETTINGS.DELETE_BUTTON_LABEL)
+      deleteButton: () => queryByText(UIStrings.SETTINGS.DELETE_BUTTON_LABEL),
+      previewButton: () => queryByText(UIStrings.CONTENT_SELECTORS.PREVIEW.BUTTON)
     }));
   }
 
@@ -99,7 +101,7 @@ describe('ContentSelectorsForm', function() {
       }
     });
 
-    const {container, loadingMask, name, type, description, expression, saveButton} = renderEditView(itemId);
+    const {loadingMask, name, type, description, expression, saveButton} = renderEditView(itemId);
 
     await waitForElementToBeRemoved(loadingMask);
 
@@ -166,7 +168,7 @@ describe('ContentSelectorsForm', function() {
       }
     });
 
-    const {expression, getByText, getByRole, loadingMask, name, saveButton, savingMask} = renderCreateView();
+    const {expression, getByText, loadingMask, name, saveButton, savingMask} = renderCreateView();
 
     await waitForElementToBeRemoved(loadingMask);
 
@@ -179,6 +181,16 @@ describe('ContentSelectorsForm', function() {
 
     expect(getByText('An error occurred with the name field')).toBeInTheDocument();
     expect(getByText('Invalid CSEL: tokenization error in \'"maven2\' at line 1 column 18')).toBeInTheDocument();
+  });
+
+  it('allows new line for expression textarea', async function() {
+    const {expression, loadingMask} = renderCreateView();
+
+    await waitForElementToBeRemoved(loadingMask);
+
+    userEvent.type(expression(), 'format == "raw"{enter}and format == "maven2"')
+
+    expect(expression()).toHaveValue('format == "raw"\nand format == "maven2"');
   });
 
   it('requests confirmation when delete is requested', async function() {
@@ -256,5 +268,91 @@ describe('ContentSelectorsForm', function() {
         {name: 'test', description: 'description', expression: 'format == "raw"'}
     ));
     expect(window.dirty).toEqual([]);
+  });
+
+  describe('ContentSelectorsPreview', function() {
+    it('shows previews', async function () {
+      const emptyPreviewMessage = UIStrings.CONTENT_SELECTORS.PREVIEW.EMPTY;
+
+      const itemId = 'test';
+      axios.get.mockImplementation((url) => {
+        if (url === `/service/rest/v1/security/content-selectors/${itemId}`) {
+          return Promise.resolve({
+            data: {
+              'name' : itemId,
+              'type' : 'csel',
+              'description' : 'description',
+              'expression' : 'format == "raw"'
+            }
+          });
+        }
+        else if (url === '/service/rest/internal/ui/repositories?withAll=true&withFormats=true') {
+          return Promise.resolve({data: [
+            {id: "*", name: "(All Repositories)"}
+          ]});
+        }
+      });
+
+      axios.post.mockResolvedValue({data: {
+        total: 1,
+        results: [{
+          id: null,
+          repository: 'maven-central',
+          format: 'maven2',
+          group: 'org.apache.maven',
+          name: 'maven-aether-provider',
+          version: '3.0',
+          assets: null
+        }]
+      }});
+
+      const {loadingMask, previewButton, getByText} = renderEditView(itemId);
+      await waitForElementToBeRemoved(loadingMask);
+
+      expect(getByText(emptyPreviewMessage)).toBeInTheDocument();
+
+      await act(async () => fireEvent.click(previewButton()));
+
+      expect(getByText('maven-aether-provider')).toBeInTheDocument();
+    });
+
+    it('shows preview error API message', async function () {
+      const itemId = 'test';
+      axios.get.mockImplementation((url) => {
+        if (url === `/service/rest/v1/security/content-selectors/${itemId}`) {
+          return Promise.resolve({
+            data: {
+              'name' : itemId,
+              'type' : 'csel',
+              'description' : 'description',
+              'expression' : 'format == "raw"'
+            }
+          });
+        }
+        else if (url === '/service/rest/internal/ui/repositories?withAll=true&withFormats=true') {
+          return Promise.resolve({data: [
+            {id: "*", name: "(All Repositories)"}
+          ]});
+        }
+      });
+
+      axios.post.mockRejectedValue({
+        response: {
+          data: [
+            {
+              id: 'HelperBean.expression',
+              message: 'Invalid CSEL'
+            }
+          ]
+        }
+      });
+
+      const {loadingMask, previewButton, getByText} = renderEditView(itemId);
+      await waitForElementToBeRemoved(loadingMask);
+
+      await act(async () => fireEvent.click(previewButton()));
+
+      expect(getByText('An error occurred loading data. Invalid CSEL')).toBeInTheDocument();
+    });
   });
 });

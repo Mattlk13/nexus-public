@@ -68,6 +68,8 @@ import static java.util.stream.StreamSupport.stream;
 import static org.sonatype.nexus.repository.maven.internal.Attributes.P_BASE_VERSION;
 import static org.sonatype.nexus.repository.maven.internal.Attributes.P_PACKAGING;
 import static org.sonatype.nexus.repository.maven.internal.Attributes.P_POM_NAME;
+import static org.sonatype.nexus.repository.maven.internal.hosted.metadata.MetadataUtils.getPluginPrefix;
+import static org.sonatype.nexus.repository.maven.internal.Constants.SNAPSHOT_VERSION_SUFFIX;
 import static org.sonatype.nexus.repository.maven.internal.hosted.metadata.MetadataUtils.metadataPath;
 import static org.sonatype.nexus.repository.maven.internal.orient.MavenFacetUtils.findAsset;
 import static org.sonatype.nexus.repository.storage.ComponentEntityAdapter.P_GROUP;
@@ -130,7 +132,6 @@ public class OrientMetadataRebuilder
         timeoutSeconds, new OrientMetadataUpdater(update, repository)).rebuildMetadata();
   }
 
-  @Override
   public boolean refreshInTransaction(
       final Repository repository,
       final boolean update,
@@ -276,6 +277,7 @@ public class OrientMetadataRebuilder
     protected List<Map<String, Object>> browseGAVs() {
       Iterable<ODocument> iterableGavs = Transactional.operation.call(() -> {
         final StorageTx tx = UnitOfWork.currentTx();
+        log.debug("Searching GAVs with Query='{}' and Parameters='{}'", sql, sqlParams);
         return tx.browse(sql, sqlParams, bufferSize, timeoutSeconds);
       });
       return StreamSupport.stream(iterableGavs.spliterator(), false).map(odocument -> ImmutableMap.of(
@@ -312,13 +314,25 @@ public class OrientMetadataRebuilder
       final StorageTx tx = UnitOfWork.currentTx();
 
       metadataBuilder.onEnterArtifactId(artifactId);
+      log.debug("{}:{} Base versions to add {}", groupId, artifactId, baseVersions);
       for (final String baseVersion : baseVersions) {
         checkCancellation();
         TransactionalStoreBlob.operation
             .run(() -> this.rebuildBaseVersion(groupId, artifactId, baseVersion, tx, failures));
       }
       Maven2Metadata artifactMetadata = metadataBuilder.onExitArtifactId();
-      processMetadata(metadataPath(groupId, artifactId, null), artifactMetadata, failures);
+
+      /*
+       * Should only touch (i.e. rebuild) GA metadata if
+       * and only if the metadata request is NOT for a snapshot GABV metadata.
+       */
+      if (requestedBaseVersionIsNotSnapshot()) {
+        log.debug("Will rebuild metadata for {}:{}", groupId, artifactId);
+        processMetadata(metadataPath(groupId, artifactId, null), artifactMetadata, failures);
+      }
+      else {
+        log.debug("Skipping {}:{} for rebuild.", groupId, artifactId);
+      }
     }
 
     @Override
@@ -333,31 +347,30 @@ public class OrientMetadataRebuilder
       MavenPath metadataPath = metadataPath(groupId, artifactId, null);
 
       metadataBuilder.onEnterArtifactId(artifactId);
-      boolean rebuiltAtLeastOneVersion = baseVersions.stream()
-          .map(v -> {
-            checkCancellation();
-            return TransactionalStoreBlob.operation.call(() -> this.refreshVersion(groupId, artifactId, v, tx, failures));
-          })
-          .reduce(Boolean::logicalOr)
-          .orElse(false);
+      baseVersions.forEach(v -> {
+        checkCancellation();
+        TransactionalStoreBlob.operation.call(() -> this.refreshVersion(groupId, artifactId, v, tx, failures));
+      });
+
       Maven2Metadata newMetadata = metadataBuilder.onExitArtifactId();
 
-      /**
-       * The rebuild flag on the requested asset may have been cleared before we were invoked.
-       * So we check a special case to always rebuild the metadata for the g:a:v that we were initialized with
+      /*
+       * Should only touch (i.e. rebuild) GA metadata if
+       * and only if the metadata request is NOT for a snapshot GABV metadata.
        */
-      boolean isRequestedVersion = StringUtils.equals(this.groupId, groupId) &&
-          StringUtils.equals(this.artifactId, artifactId) &&
-          StringUtils.equals(baseVersion, null);
-
-      if (rebuiltAtLeastOneVersion || isRequestedVersion || requiresRebuild(tx, metadataPath)) {
+      if (requestedBaseVersionIsNotSnapshot()) {
+        log.debug("Will refresh metadata for {}:{}", groupId, artifactId);
         processMetadata(metadataPath, newMetadata, failures);
         return true;
       }
       else {
-        log.debug("Skipping {}:{} for rebuild", groupId, artifactId);
+        log.debug("Skipping {}:{} for rebuild.", groupId, artifactId);
         return false;
       }
+    }
+
+    private boolean requestedBaseVersionIsNotSnapshot() {
+      return this.baseVersion == null || !this.baseVersion.endsWith(SNAPSHOT_VERSION_SUFFIX);
     }
 
     private boolean requiresRebuild(final StorageTx tx, final MavenPath metadataPath) {
@@ -404,7 +417,10 @@ public class OrientMetadataRebuilder
       metadataBuilder.onEnterBaseVersion(baseVersion);
       collectComponentAssetInformation(groupId, artifactId, baseVersion, tx, metadataBuilder);
       Maven2Metadata baseVersionMetadata = metadataBuilder.onExitBaseVersion();
-      processMetadata(metadataPath(groupId, artifactId, baseVersion), baseVersionMetadata, failures);
+      MavenPath metadataPath = metadataPath(groupId, artifactId, baseVersion);
+      log.debug("About to process metadata. Path {}. Metadata {}, failures {}",
+          metadataPath, baseVersionMetadata, failures);
+      processMetadata(metadataPath, baseVersionMetadata, failures);
     }
 
     private void collectComponentAssetInformation(
@@ -425,14 +441,16 @@ public class OrientMetadataRebuilder
           }
 
           builder.addArtifactVersion(mavenPath);
+          log.debug("Added base version {}", version);
           if (rebuildChecksums) {
             stream(HashType.values()).forEach(hashType -> mayUpdateChecksum(mavenPath, hashType));
           }
           final String packaging = component.formatAttributes().get(P_PACKAGING, String.class);
           log.debug("POM packaging: {}", packaging);
           if ("maven-plugin".equals(packaging)) {
-            metadataBuilder.addPlugin(getPluginPrefix(mavenPath.locateMainArtifact("jar")), artifactId,
-                component.formatAttributes().get(P_POM_NAME, String.class));
+            MavenPath mainArtifact = mavenPath.locateMainArtifact("jar");
+            metadataBuilder.addPlugin(getPluginPrefix(mainArtifact, () -> get(mainArtifact).openInputStream()),
+                artifactId, component.formatAttributes().get(P_POM_NAME, String.class));
           }
         }
       }

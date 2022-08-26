@@ -27,8 +27,8 @@ import javax.ws.rs.core.Response;
 
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.search.index.SearchIndexService;
-import org.sonatype.nexus.repository.search.query.SearchQueryService;
+import org.sonatype.nexus.repository.search.index.ElasticSearchIndexService;
+import org.sonatype.nexus.repository.search.query.ElasticSearchQueryService;
 
 import com.google.common.collect.Lists;
 
@@ -36,70 +36,44 @@ import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 
-@Named
-@Singleton
-public class SearchTestSystem
+public interface SearchTestSystem
 {
-  @Inject
-  public SearchIndexService indexService;
-
-  @Inject
-  public SearchQueryService searchQueryService;
-
-  @Inject
-  public EventManager eventManager;
 
   /**
    * Waits for indexing to finish and makes sure any updates are available to search.
    *
    * General flow is component/asset events -> bulk index requests -> search indexing.
    */
-  public void waitForSearch() {
-    await().atMost(30, TimeUnit.SECONDS).until(eventManager::isCalmPeriod);
-    indexService.flush(false); // no need for full fsync here
-    await().atMost(30, TimeUnit.SECONDS).until(indexService::isCalmPeriod);
-  }
+  void waitForSearch();
 
-  public void verifyComponentExists(
+  default void verifyComponentExists(
       final WebTarget nexusSearchWebTarget,
-      final Repository repository,
-      final String name,
-      final String version,
-      final boolean exists)
-  {
-    String repositoryName = repository.getName();
-    List<Map<String, Object>> items = searchForComponent(nexusSearchWebTarget, repositoryName, name, version);
-    assertThat(items.size(), is(exists ? 1 : 0));
-  }
-
-  public void verifyComponentDoesNotExists(
-      final WebTarget nexusSearchWebTarget,
-      final Repository repository,
+      final String repositoryName,
       final Optional<String> group,
       final Optional<String> name,
       final Optional<String> version)
   {
-    assertThat(verifyComponentExistsByGAV(nexusSearchWebTarget, repository, group, name, version), is(0));
+    assertThat(verifyComponentExistsByGAV(nexusSearchWebTarget, repositoryName, group, name, version), is(1));
   }
 
-  public void verifyComponentExists(
+  default void verifyComponentDoesNotExist(
       final WebTarget nexusSearchWebTarget,
-      final Repository repository,
+      final String repositoryName,
       final Optional<String> group,
       final Optional<String> name,
       final Optional<String> version)
   {
-    assertThat(verifyComponentExistsByGAV(nexusSearchWebTarget, repository, group, name, version), is(1));
+    assertThat(verifyComponentExistsByGAV(nexusSearchWebTarget, repositoryName, group, name, version), is(0));
   }
 
-  public void verifyComponentExists(
+  default void verifyComponentExists(
       final WebTarget nexusSearchWebTarget,
       final QueryParam queryParam)
   {
     verifyComponentExists(nexusSearchWebTarget, Lists.newArrayList(queryParam));
   }
 
-  public void verifyComponentExists(
+  default void verifyComponentExists(
       final WebTarget nexusSearchWebTarget,
       final Collection<QueryParam> queryParams)
   {
@@ -107,16 +81,16 @@ public class SearchTestSystem
     assertThat(items.size(), is(1));
   }
 
-  private int verifyComponentExistsByGAV(
+  default int verifyComponentExistsByGAV(
       final WebTarget nexusSearchWebTarget,
-      final Repository repository,
+      final String repositoryName,
       final Optional<String> group,
       final Optional<String> name,
       final Optional<String> version)
   {
     List<QueryParam> queryParams = new ArrayList<>();
 
-    queryParams.add(new QueryParam("repository", repository.getName()));
+    queryParams.add(new QueryParam("repository", repositoryName));
     group.map(g -> new QueryParam("group", g)).ifPresent(queryParams::add);
     name.map(n -> new QueryParam("name", n)).ifPresent(queryParams::add);
     version.map(v -> new QueryParam("version", v)).ifPresent(queryParams::add);
@@ -125,7 +99,8 @@ public class SearchTestSystem
     return items.size();
   }
 
-  public static class QueryParam {
+  class QueryParam
+  {
     public final String name;
     public final String value;
 
@@ -135,11 +110,7 @@ public class SearchTestSystem
     }
   }
 
-  public SearchQueryService queryService() {
-    return searchQueryService;
-  }
-
-  private List<Map<String, Object>> searchForComponentByParams(
+  default List<Map<String, Object>> searchForComponentByParams(
       final WebTarget nexusSearchUrl,
       final Collection<QueryParam> queryParams)
   {
@@ -160,28 +131,7 @@ public class SearchTestSystem
   }
 
   @SuppressWarnings("unchecked")
-  private List<Map<String, Object>> searchForComponent(
-      final WebTarget nexusSearchUrl,
-      final String repository,
-      final String artifactId,
-      final String version)
-  {
-    waitForSearch();
-
-    Response response = nexusSearchUrl
-        .queryParam("repository", repository)
-        .queryParam("maven.artifactId", artifactId)
-        .queryParam("maven.baseVersion", version)
-        .request()
-        .buildGet()
-        .invoke();
-
-    Map<String, Object> map = response.readEntity(Map.class);
-    return (List<Map<String, Object>>) map.get("items");
-  }
-
-  @SuppressWarnings("unchecked")
-  public List<Map<String, Object>> searchByTag(
+  default List<Map<String, Object>> searchByTag(
       final WebTarget nexusSearchUrl,
       final String repository,
       final String tag)

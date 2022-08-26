@@ -14,6 +14,7 @@ package org.sonatype.nexus.repository.httpbridge.internal;
 
 import javax.inject.Named;
 
+import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.security.FilterChainModule;
 import org.sonatype.nexus.security.SecurityFilter;
 import org.sonatype.nexus.security.anonymous.AnonymousFilter;
@@ -22,7 +23,8 @@ import org.sonatype.nexus.security.authc.NexusAuthenticationFilter;
 import org.sonatype.nexus.security.authc.apikey.ApiKeyAuthenticationFilter;
 
 import com.google.inject.AbstractModule;
-import com.google.inject.servlet.ServletModule;
+
+import static org.sonatype.nexus.common.app.FeatureFlags.SESSION_ENABLED;
 
 /**
  * Repository HTTP bridge module.
@@ -30,6 +32,7 @@ import com.google.inject.servlet.ServletModule;
  * @since 3.0
  */
 @Named
+@FeatureFlag(name = SESSION_ENABLED)
 public class HttpBridgeModule
     extends AbstractModule
 {
@@ -37,24 +40,10 @@ public class HttpBridgeModule
 
   @Override
   protected void configure() {
-    install(new ServletModule()
+    install(new HttpBridgeServletModule()
     {
       @Override
-      protected void configureServlets() {
-        bind(ViewServlet.class);
-        serve(MOUNT_POINT + "/*").with(ViewServlet.class);
-        bindViewFiltersFor(MOUNT_POINT + "/*");
-      }
-
-      /**
-       * Helper to make sure view-related filters are bound in the correct order by servlet filter.
-       */
-      private void bindViewFiltersFor(final String urlPattern, final String... morePatterns) {
-        bindViewFilters(filter(urlPattern, morePatterns));
-      }
-
-      private void bindViewFilters(FilterKeyBindingBuilder filter) {
-        filter.through(ExhaustRequestFilter.class);
+      protected void bindSecurityFilter(final FilterKeyBindingBuilder filter) {
         filter.through(SecurityFilter.class);
       }
     });

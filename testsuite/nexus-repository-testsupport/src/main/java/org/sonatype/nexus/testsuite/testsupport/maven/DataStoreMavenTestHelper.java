@@ -18,6 +18,7 @@ import java.io.InputStreamReader;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,7 @@ import javax.annotation.Nonnull;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.common.time.DateHelper;
 import org.sonatype.nexus.content.maven.MavenContentFacet;
 import org.sonatype.nexus.repository.Repository;
@@ -43,7 +45,6 @@ import org.sonatype.nexus.repository.maven.MavenMetadataRebuildFacet;
 import org.sonatype.nexus.repository.maven.MavenPath;
 import org.sonatype.nexus.repository.maven.MavenPath.HashType;
 import org.sonatype.nexus.repository.maven.MavenPathParser;
-import org.sonatype.nexus.repository.raw.RawCoordinatesHelper;
 import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.Payload;
 import org.sonatype.nexus.repository.view.payloads.TempBlob;
@@ -63,6 +64,8 @@ import static org.sonatype.nexus.common.entity.Continuations.iterableOf;
 import static org.sonatype.nexus.common.entity.Continuations.streamOf;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.MD5;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA1;
+import static org.sonatype.nexus.repository.maven.MavenMetadataRebuildFacet.METADATA_FORCE_REBUILD;
+import static org.sonatype.nexus.repository.maven.MavenMetadataRebuildFacet.METADATA_REBUILD;
 
 @Named
 @Singleton
@@ -221,7 +224,7 @@ public class DataStoreMavenTestHelper
   }
 
   @Override
-  public String createComponent(
+  public EntityId createComponent(
       final Repository repository,
       final String groupId,
       final String artifactId,
@@ -231,11 +234,13 @@ public class DataStoreMavenTestHelper
     FluentAsset asset = repository.facet(ContentFacet.class).assets()
         .path(path)
         .component(repository.facet(ContentFacet.class).components()
-            .name(path)
-            .namespace(RawCoordinatesHelper.getGroup(path))
-            .getOrCreate())
+            .name(artifactId)
+            .namespace(groupId)
+            .version(version)
+            .getOrCreate()
+            .withAttribute("maven2", Collections.singletonMap("baseVersion", version)))
         .save();
-    return InternalIds.toExternalId(InternalIds.internalComponentId(asset).getAsInt()).getValue();
+    return InternalIds.toExternalId(InternalIds.internalComponentId(asset).getAsInt());
   }
 
   @Override
@@ -281,6 +286,15 @@ public class DataStoreMavenTestHelper
         .filter(this::isNotFlaggedForRebuild)
         .map(Asset::path)
         .collect(Collectors.toList());
+  }
+
+  @Override
+  public void markMetadataForRebuild(final Repository repository, final String path) {
+    Optional<FluentAsset> maybeAsset =
+        repository.facet(MavenContentFacet.class).assets().path(prependIfMissing(path, ASSET_PATH_PREFIX)).find();
+    assertTrue("Could not set forceRebuild flag, because requested path does not exist", maybeAsset.isPresent());
+    FluentAsset asset = maybeAsset.get();
+    asset.withAttribute(METADATA_REBUILD, Collections.singletonMap(METADATA_FORCE_REBUILD, true));
   }
 
   private boolean isNotFlaggedForRebuild(final FluentAsset asset) {

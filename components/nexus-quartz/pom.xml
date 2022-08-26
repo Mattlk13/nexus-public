@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.sonatype.nexus</groupId>
     <artifactId>nexus-components</artifactId>
-    <version>3.36.0-SNAPSHOT</version>
+    <version>3.42.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>nexus-quartz</artifactId>
@@ -86,6 +86,11 @@
       <groupId>org.awaitility</groupId>
       <artifactId>awaitility</artifactId>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-upgrade</artifactId>
+      <scope>provided</scope>
     </dependency>
   </dependencies>
 

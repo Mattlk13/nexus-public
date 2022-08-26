@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.sonatype.nexus</groupId>
     <artifactId>nexus-components</artifactId>
-    <version>3.36.0-SNAPSHOT</version>
+    <version>3.42.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>nexus-blobstore-file</artifactId>
@@ -59,6 +59,13 @@
     </dependency>
 
     <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-datastore-mybatis</artifactId>
+      <optional>true</optional>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
       <groupId>com.squareup</groupId>
       <artifactId>tape</artifactId>
     </dependency>
@@ -79,6 +86,16 @@
       <groupId>org.awaitility</groupId>
       <artifactId>awaitility</artifactId>
       <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-test-db</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-upgrade</artifactId>
     </dependency>
   </dependencies>
 

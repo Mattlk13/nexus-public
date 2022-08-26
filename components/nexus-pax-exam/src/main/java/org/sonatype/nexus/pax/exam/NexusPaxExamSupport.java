@@ -18,9 +18,9 @@ import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeoutException;
-
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.net.ssl.HttpsURLConnection;
@@ -52,6 +52,7 @@ import org.ops4j.pax.exam.OptionUtils;
 import org.ops4j.pax.exam.junit.PaxExam;
 import org.ops4j.pax.exam.karaf.options.KarafDistributionConfigurationFileExtendOption;
 import org.ops4j.pax.exam.options.MavenUrlReference;
+import org.ops4j.pax.exam.options.OptionalCompositeOption;
 import org.ops4j.pax.exam.options.ProvisionOption;
 import org.ops4j.pax.exam.spi.reactors.ExamReactorStrategy;
 import org.ops4j.pax.exam.spi.reactors.PerClass;
@@ -73,7 +74,10 @@ import static org.ops4j.pax.exam.CoreOptions.when;
 import static org.ops4j.pax.exam.CoreOptions.wrappedBundle;
 import static org.ops4j.pax.exam.OptionUtils.combine;
 import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.*;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_CLUSTERED_ENABLED;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_TABLE_SEARCH;
+import static org.sonatype.nexus.common.app.FeatureFlags.JWT_ENABLED;
 import static org.sonatype.nexus.common.app.FeatureFlags.ORIENT_ENABLED;
 import static org.testcontainers.containers.BindMode.READ_ONLY;
 
@@ -125,6 +129,19 @@ public abstract class NexusPaxExamSupport
   public static String TEST_JDBC_URL_PROPERTY = "nexus.test.jdbcUrl";
 
   private static final String DATABASE_KEY = "it.database";
+
+  private static final String BLOB_STORE_KEY = "it.blobstore";
+
+  private static final String SQL_SEARCH_KEY = "it.sql_search";
+
+  private static final String HA_KEY = "it.ha";
+
+  /*
+   * Key identifying a system property which if set, should be used as a prefix for {@code it-data} subdirectory
+   * names to prevent a collision when Jenkins aggregates across parallel stages. (Jenkins isn't smart enough to
+   * avoid overwriting files)
+   */
+  private static final String PROP_TEST_PREFIX = "it.data.prefix";
 
   // -------------------------------------------------------------------------
 
@@ -242,8 +259,7 @@ public abstract class NexusPaxExamSupport
    * Periodically polls function until it returns {@code true} or 30 seconds have elapsed.
    *
    * @throws InterruptedException if the thread is interrupted
-   * @throws TimeoutException if the timeout exceeded
-   *
+   * @throws TimeoutException     if the timeout exceeded
    * @deprecated use the Awaitility.await() helper instead of this method
    */
   @Deprecated
@@ -257,8 +273,7 @@ public abstract class NexusPaxExamSupport
    * Periodically polls function until it returns {@code true} or the timeout has elapsed.
    *
    * @throws InterruptedException if the thread is interrupted
-   * @throws TimeoutException if the timeout exceeded
-   *
+   * @throws TimeoutException     if the timeout exceeded
    * @deprecated use the Awaitility.await() helper instead of this method
    */
   @Deprecated
@@ -341,8 +356,8 @@ public abstract class NexusPaxExamSupport
   // -------------------------------------------------------------------------
 
   /**
-   * To test a different version set the 'it.nexus.bundle.version' system property.<br>
-   * You can also override the 'groupId', 'artifactId', and 'classifier' the same way.
+   * To test a different version set the 'it.nexus.bundle.version' system property.<br> You can also override the
+   * 'groupId', 'artifactId', and 'classifier' the same way.
    *
    * @return Pax-Exam option to install a Nexus distribution based on groupId and artifactId
    */
@@ -351,8 +366,8 @@ public abstract class NexusPaxExamSupport
   }
 
   /**
-   * To test a different version set the 'it.nexus.bundle.version' system property.<br>
-   * You can also override the 'groupId', 'artifactId', and 'classifier' the same way.
+   * To test a different version set the 'it.nexus.bundle.version' system property.<br> You can also override the
+   * 'groupId', 'artifactId', and 'classifier' the same way.
    *
    * @return Pax-Exam option to install a Nexus distribution based on groupId, artifactId and classifier
    */
@@ -470,6 +485,16 @@ public abstract class NexusPaxExamSupport
             configureDatabase()
         ),
 
+        when(System.getProperty(PROP_TEST_PREFIX) != null).useOptions(
+            editConfigurationFilePut(NEXUS_PROPERTIES_FILE, //
+                PROP_TEST_PREFIX, System.getProperty(PROP_TEST_PREFIX)),
+            editConfigurationFilePut(NEXUS_PROPERTIES_FILE, //
+                "goodies.build.name", System.getProperty(PROP_TEST_PREFIX))
+        ),
+
+        // configure default blobstore
+        configureBlobstore(),
+
         // randomize ports...
         editConfigurationFilePut(NEXUS_PROPERTIES_FILE, //
             "application-port", Integer.toString(PortAllocator.nextFreePort())),
@@ -486,13 +511,12 @@ public abstract class NexusPaxExamSupport
     switch (getValidTestDatabase()) {
       case POSTGRES:
         postgresContainer = new GenericContainer(POSTGRES_IMAGE) //NOSONAR
-          .withExposedPorts(POSTGRES_PORT)
-          .withEnv("POSTGRES_USER", DB_USER)
-          .withEnv("POSTGRES_PASSWORD", DB_PASSWORD)
-          .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger(NexusPaxExamSupport.class)))
-          .withClasspathResourceMapping("initialize-postgres.sql", "/docker-entrypoint-initdb.d/initialize-postgres.sql", READ_ONLY)
-          .waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*", 1));
-
+            .withExposedPorts(POSTGRES_PORT)
+            .withEnv("POSTGRES_USER", DB_USER)
+            .withEnv("POSTGRES_PASSWORD", DB_PASSWORD)
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger(NexusPaxExamSupport.class)))
+            .withClasspathResourceMapping("initialize-postgres.sql", "/docker-entrypoint-initdb.d/initialize-postgres.sql", READ_ONLY)
+            .waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*", 1));
         return combine(null,
             editConfigurationFilePut(NEXUS_PROPERTIES_FILE, DATASTORE_ENABLED, "true"),
             editConfigurationFilePut(NEXUS_PROPERTIES_FILE, "nexus.datastore.nexus.name", "nexus"),
@@ -500,10 +524,13 @@ public abstract class NexusPaxExamSupport
             editConfigurationFilePut(NEXUS_PROPERTIES_FILE, "nexus.datastore.nexus.jdbcUrl", configurePostgres()),
             editConfigurationFilePut(NEXUS_PROPERTIES_FILE, "nexus.datastore.nexus.username", DB_USER),
             editConfigurationFilePut(NEXUS_PROPERTIES_FILE, "nexus.datastore.nexus.password", DB_PASSWORD),
+            haOption(),
+            sqlSearchOption(),
             systemProperty(TEST_JDBC_URL_PROPERTY).value(configurePostgres())
         );
       case H2:
         return combine(null,
+            sqlSearchOption(),
             editConfigurationFilePut(NEXUS_PROPERTIES_FILE, DATASTORE_ENABLED, "true")
         );
       case ORIENT:
@@ -511,6 +538,43 @@ public abstract class NexusPaxExamSupport
       default:
         throw new IllegalStateException("No case defined for " + getValidTestDatabase());
     }
+  }
+
+  protected static Option configureBlobstore() {
+    switch (System.getProperty(BLOB_STORE_KEY, "")) {
+      case "s3":
+        String mockS3endpoint = "mock.s3.service.endpoint";
+        String bucket = "nexus.test.s3.bucket";
+        String region = "nexus.test.s3.region";
+        String accessKey = "nexus.test.s3.accessKey";
+        String accessSecret = "nexus.test.s3.accessSecret";
+        String endpoint = "nexus.test.s3.endpoint";
+        String forcePathStyle = "nexus.test.s3.forcePathStyle";
+
+        return composite(
+            // enable s3 default
+            editConfigurationFileExtend(NEXUS_PROPERTIES_FILE, "nexus.test.default.s3", Boolean.TRUE.toString()),
+            // copy the maven property if it exists
+            getS3OptionalCompositeOption(mockS3endpoint, System.getProperty(mockS3endpoint)),
+            getS3OptionalCompositeOption(bucket, System.getProperty(bucket)),
+            getS3OptionalCompositeOption(region, System.getProperty(region)),
+            getS3OptionalCompositeOption(accessKey, System.getProperty(accessKey)),
+            getS3OptionalCompositeOption(accessSecret, System.getProperty(accessSecret)),
+            getS3OptionalCompositeOption(endpoint, System.getProperty(endpoint)),
+            getS3OptionalCompositeOption(forcePathStyle, System.getProperty(forcePathStyle))
+        );
+      default:
+        return composite();
+    }
+  }
+
+  private static OptionalCompositeOption getS3OptionalCompositeOption(
+      final String propertyKey,
+      final Object propertyValue)
+  {
+    return when(Objects.nonNull(propertyValue)).useOptions(
+        editConfigurationFileExtend(NEXUS_PROPERTIES_FILE, propertyKey, propertyValue)
+    );
   }
 
   private static String configurePostgres() {
@@ -525,7 +589,7 @@ public abstract class NexusPaxExamSupport
 
   @AfterClass
   public static final void shutdownPostgres() {
-    if(postgresContainer != null && postgresContainer.isRunning()) {
+    if (postgresContainer != null && postgresContainer.isRunning()) {
       postgresContainer.stop();
     }
   }
@@ -577,8 +641,8 @@ public abstract class NexusPaxExamSupport
   }
 
   /**
-   * Replacement for {@link CoreOptions#options(Option...)} to workaround Pax-Exam 'feature'
-   * where only the last 'editConfigurationFileExtend' for a given property key is honoured.
+   * Replacement for {@link CoreOptions#options(Option...)} to workaround Pax-Exam 'feature' where only the last
+   * 'editConfigurationFileExtend' for a given property key is honoured.
    */
   public static Option[] options(final Option... options) {
     final List<Option> result = new ArrayList<>();
@@ -654,10 +718,28 @@ public abstract class NexusPaxExamSupport
   public static TestDatabase getValidTestDatabase() {
     try {
       return TestDatabase.valueOf(Strings2.upper(System.getProperty(DATABASE_KEY)));
-    } catch (Exception e){
+    }
+    catch (Exception e) {
       //fallback to ORIENT if it is invalid
       return TestDatabase.ORIENT;
     }
+  }
+
+  public static Option sqlSearchOption() {
+    boolean sqlSearch = Boolean.parseBoolean(System.getProperty(SQL_SEARCH_KEY, "false"));
+
+    // SQL Search
+    return when(sqlSearch).useOptions(editConfigurationFilePut(NEXUS_PROPERTIES_FILE, //
+        DATASTORE_TABLE_SEARCH, "true"));
+  }
+
+  public static Option haOption() {
+    boolean ha = Boolean.parseBoolean(System.getProperty(HA_KEY, "false"));
+
+    // HA mode enable
+    Option dsClusteredEnable = editConfigurationFilePut(NEXUS_PROPERTIES_FILE, DATASTORE_CLUSTERED_ENABLED, "true");
+    Option jwtEnabled = editConfigurationFilePut(NEXUS_PROPERTIES_FILE, JWT_ENABLED, "true");
+    return when(ha).useOptions(dsClusteredEnable, jwtEnabled);
   }
 
   protected boolean isNewDb() {

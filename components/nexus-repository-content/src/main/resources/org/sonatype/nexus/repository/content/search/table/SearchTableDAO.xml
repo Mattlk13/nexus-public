@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+
+    Sonatype Nexus (TM) Open Source Version
+    Copyright (c) 2008-present Sonatype, Inc.
+    All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
+
+    This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
+    which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
+
+    Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
+    of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
+    Eclipse Foundation. All other trademarks are the property of their respective owners.
+
+-->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.sonatype.nexus.repository.content.search.table.SearchTableDAO">
+
+  <insert id="createSchema">
+    CREATE TABLE IF NOT EXISTS component_search
+    (
+      repository_id          INTEGER                  NOT NULL,
+      component_id           INTEGER                  NOT NULL,
+      asset_id               INTEGER                  NOT NULL,
+      format                 VARCHAR                  NOT NULL,
+      namespace              VARCHAR                  NOT NULL,
+      search_component_name  VARCHAR                  NOT NULL,
+      path                   VARCHAR                  NOT NULL,
+      component_kind         VARCHAR                  NOT NULL,
+      version                VARCHAR                  NOT NULL,
+      component_created      TIMESTAMP WITH TIME ZONE NOT NULL,
+      search_repository_name VARCHAR(200)             NOT NULL,
+      content_type           VARCHAR                  NOT NULL,
+      md5                    VARCHAR,
+      sha1                   VARCHAR,
+      sha256                 VARCHAR,
+      sha512                 VARCHAR,
+
+      CONSTRAINT pk_component_search PRIMARY KEY (repository_id, component_id, asset_id, format)
+      );
+
+    -- Columns added after this table was included in a release
+    ALTER TABLE component_search ADD COLUMN IF NOT EXISTS format_field_1 VARCHAR;
+    ALTER TABLE component_search ADD COLUMN IF NOT EXISTS format_field_2 VARCHAR;
+    ALTER TABLE component_search ADD COLUMN IF NOT EXISTS format_field_3 VARCHAR;
+    ALTER TABLE component_search ADD COLUMN IF NOT EXISTS format_field_4 VARCHAR;
+    ALTER TABLE component_search ADD COLUMN IF NOT EXISTS format_field_5 VARCHAR;
+    ALTER TABLE component_search ADD COLUMN IF NOT EXISTS uploader VARCHAR;
+    ALTER TABLE component_search ADD COLUMN IF NOT EXISTS uploader_ip VARCHAR;
+    ALTER TABLE component_search ADD COLUMN IF NOT EXISTS normalised_version VARCHAR NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_component_search_normalised_version ON component_search (normalised_version);
+    CREATE INDEX IF NOT EXISTS idx_component_search_namespace ON component_search (namespace);
+    CREATE INDEX IF NOT EXISTS idx_component_search_component_name ON component_search (search_component_name);
+    CREATE INDEX IF NOT EXISTS idx_component_search_format ON component_search (format);
+    CREATE INDEX IF NOT EXISTS idx_component_search_path ON component_search (path);
+    CREATE INDEX IF NOT EXISTS idx_component_search_repository_name ON component_search (search_repository_name);
+    CREATE INDEX IF NOT EXISTS idx_component_search_md5 ON component_search (md5);
+    CREATE INDEX IF NOT EXISTS idx_component_search_sha1 ON component_search (sha1);
+    CREATE INDEX IF NOT EXISTS idx_component_search_sha256 ON component_search (sha256);
+    CREATE INDEX IF NOT EXISTS idx_component_search_sha512 ON component_search (sha512);
+    CREATE INDEX IF NOT EXISTS idx_component_search_format_field_1 ON component_search (format_field_1);
+    CREATE INDEX IF NOT EXISTS idx_component_search_format_field_2 ON component_search (format_field_2);
+    CREATE INDEX IF NOT EXISTS idx_component_search_format_field_3 ON component_search (format_field_3);
+    CREATE INDEX IF NOT EXISTS idx_component_search_format_field_4 ON component_search (format_field_4);
+    CREATE INDEX IF NOT EXISTS idx_component_search_format_field_5 ON component_search (format_field_5);
+    CREATE INDEX IF NOT EXISTS idx_component_search_uploader ON component_search (uploader);
+    CREATE INDEX IF NOT EXISTS idx_component_search_uploader_ip ON component_search (uploader_ip);
+  </insert>
+
+  <sql id="repositoryMatch">
+    repository_id = #{repositoryId}
+    AND format = #{format}
+  </sql>
+
+  <sql id="componentMatch">
+    <include refid="repositoryMatch"/>
+    AND component_id = #{componentId}
+  </sql>
+
+  <sql id="PKMatch">
+    <include refid="componentMatch"/>
+    AND asset_id = #{assetId}
+  </sql>
+
+  <resultMap id="searchTableData" type="org.sonatype.nexus.repository.content.search.table.SearchTableData">
+    <id property="repositoryId" column="repository_id" />
+    <id property="componentId" column="component_id" />
+    <id property="assetId" column="asset_id" />
+    <id property="format" column="format" />
+    <result property="namespace" column="namespace"/>
+    <result property="componentName" column="search_component_name"/>
+    <result property="componentKind" column="component_kind"/>
+    <result property="version" column="version"/>
+    <result property="normalisedVersion" column="normalised_version"/>
+    <result property="componentCreated" column="component_created"/>
+    <result property="repositoryName" column="search_repository_name"/>
+    <result property="path" column="path"/>
+    <result property="contentType" column="content_type"/>
+    <result property="md5" column="md5"/>
+    <result property="sha1" column="sha1"/>
+    <result property="sha256" column="sha256"/>
+    <result property="sha512" column="sha512"/>
+    <result property="formatField1" column="format_field_1"/>
+    <result property="formatField2" column="format_field_2"/>
+    <result property="formatField3" column="format_field_3"/>
+    <result property="formatField4" column="format_field_4"/>
+    <result property="formatField5" column="format_field_5"/>
+    <result property="uploader" column="uploader"/>
+    <result property="uploaderIp" column="uploader_ip"/>
+  </resultMap>
+
+  <insert id="create" parameterType="SearchTableData">
+    INSERT INTO component_search(repository_id, component_id, asset_id, format, namespace, search_component_name, path,
+                                 component_kind, version, normalised_version, search_repository_name, content_type, md5,
+                                 sha1, sha256, sha512, format_field_1, format_field_2, format_field_3, format_field_4,
+                                 format_field_5, uploader, uploader_ip, component_created)
+    VALUES (#{repositoryId}, #{componentId}, #{assetId}, #{format}, #{namespace}, #{componentName}, #{path},
+            #{componentKind}, #{version}, #{normalisedVersion} ,#{repositoryName}, #{contentType}, #{md5}, #{sha1},
+            #{sha256}, #{sha512}, #{formatField1}, #{formatField2}, #{formatField3}, #{formatField4}, #{formatField5},
+            #{uploader}, #{uploaderIp},
+            (SELECT created FROM ${format}_component WHERE component_id = #{componentId}));
+  </insert>
+
+  <update id="updateKind">
+    UPDATE component_search
+    SET component_kind = #{componentKind}
+    WHERE <include refid="componentMatch"/>
+  </update>
+
+  <update id="updateFormatFields">
+    UPDATE component_search
+    SET
+    format_field_1 = #{formatField1},
+    format_field_2 = #{formatField2},
+    format_field_3 = #{formatField3},
+    format_field_4 = #{formatField4},
+    format_field_5 = #{formatField5}
+    WHERE <include refid="PKMatch"/>
+  </update>
+
+  <delete id="delete">
+    DELETE
+    FROM component_search
+    WHERE <include refid="PKMatch"/>
+  </delete>
+
+  <delete id="deleteAllForRepository">
+    WITH toBeDeleted as (
+        SELECT component_id, asset_id
+        FROM component_search
+        WHERE <include refid="repositoryMatch"/>
+    <if test="limit gt 0"> LIMIT ${limit}</if>)
+    DELETE
+    FROM component_search cs
+    WHERE <include refid="repositoryMatch"/>
+        AND cs.component_id IN (SELECT td.component_id FROM toBeDeleted td)
+        AND cs.asset_id IN (SELECT td.asset_id FROM toBeDeleted td)
+  </delete>
+
+  <resultMap id="searchDataMap" type="org.sonatype.nexus.repository.content.search.SearchResultData">
+    <id property="componentId" column="component_id" />
+    <result property="namespace" column="namespace"/>
+    <result property="componentName" column="search_component_name"/>
+    <result property="version" column="version"/>
+    <result property="normalisedVersion" column="normalised_version"/>
+    <result property="repositoryName" column="search_repository_name"/>
+    <result property="format" column="format"/>
+    <result property="created" column="component_created" />
+    <result property="uploader" column="uploader" />
+    <result property="uploaderIp" column="uploader_ip" />
+  </resultMap>
+
+  <select id="searchComponents" resultMap="searchDataMap" parameterType="SqlSearchRequest">
+    SELECT
+        cs.component_id,
+        cs.namespace,
+        cs.search_component_name,
+        cs.version,
+        cs.normalised_version,
+        cs.search_repository_name,
+        cs.format,
+        cs.component_created,
+        cs.uploader,
+        cs.uploader_ip
+    FROM component_search cs
+    <if test="filterParams != null and filterParams.containsKey('name') and filterParams.containsKey('format')">
+      INNER JOIN ${filterParams.format}_component_tag ctg
+          ON cs.component_id = ctg.component_id AND cs.format = #{filterParams.format}
+      INNER JOIN tag tg ON ctg.tag_id = tg.id
+    </if>
+    <where>
+      <if test="tagToComponentIds != null">
+        <foreach collection="tagToComponentIds.entrySet()" index="key" item="value" separator="OR">
+          (cs.format = #{key}
+          AND cs.component_id IN
+          <foreach collection="value" index="idx" item="item" open="(" separator="," close=")">
+            ${item}
+          </foreach>
+          )
+        </foreach>
+      </if>
+      <if test="filter != null">(${filter})</if>
+    </where>
+    GROUP BY
+        cs.component_id, cs.namespace, cs.search_component_name, cs.version, cs.normalised_version,
+        cs.search_repository_name, cs.format, cs.component_created, cs.uploader, cs.uploader_ip
+    ORDER BY ${sortColumnName} ${sortDirection}
+    <if test="sortColumnName != defaultSortColumnName">, ${defaultSortColumnName}</if>
+    <if test="sortColumnName != secondDefaultSortColumnName">, ${secondDefaultSortColumnName}</if>
+    <if test="limit != null">LIMIT #{limit}</if>
+    OFFSET #{offset};
+  </select>
+
+  <select id="count" resultType="int">
+    SELECT COUNT(DISTINCT cs.component_id)
+    FROM component_search cs
+    <if test="filterParams != null and filterParams.containsKey('name')">
+      INNER JOIN ${filterParams.format}_component_tag ctg
+          ON cs.component_id = ctg.component_id AND cs.format = #{filterParams.format}
+      INNER JOIN tag tg ON ctg.tag_id = tg.id
+    </if>
+    <where>
+      <if test="filter != null">(${filter})</if>
+    </where>
+  </select>
+
+  <insert id="saveBatch" parameterType="java.util.List">
+    INSERT INTO component_search(repository_id, component_id, asset_id, format, namespace, search_component_name, path,
+    component_kind, version, normalised_version, search_repository_name, content_type, md5, sha1, sha256, sha512,
+    component_created, format_field_1, format_field_2, format_field_3, format_field_4, format_field_5, uploader, uploader_ip)
+    VALUES
+    <foreach collection="searchData" separator="," item="item">
+      (#{item.repositoryId}, #{item.componentId}, #{item.assetId}, #{item.format}, #{item.namespace}, #{item.componentName}, #{item.path},
+      #{item.componentKind}, #{item.version}, #{item.normalisedVersion}, #{item.repositoryName}, #{item.contentType},
+       #{item.md5}, #{item.sha1}, #{item.sha256}, #{item.sha512}, #{item.componentCreated}, #{item.formatField1}, #{item.formatField2},
+       #{item.formatField3}, #{item.formatField4}, #{item.formatField5}, #{item.uploader}, #{item.uploaderIp})
+    </foreach>
+  </insert>
+
+  <select id="findComponentIdsByTag" resultMap="searchDataMap">
+    <foreach collection="formats" index="index" item="format" separator=" UNION ALL ">
+      SELECT
+          '${format}' as format,
+          ct.component_id as component_id
+      FROM tag t
+          INNER JOIN ${format}_component_tag ct on t.id = ct.tag_id AND t.name = #{tagName}
+    </foreach>
+      ORDER BY format, component_id
+  </select>
+</mapper>

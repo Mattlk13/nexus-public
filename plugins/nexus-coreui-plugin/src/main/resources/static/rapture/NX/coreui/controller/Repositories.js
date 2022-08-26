@@ -190,6 +190,9 @@ Ext.define('NX.coreui.controller.Repositories', {
           OptionalFieldSet enables all child elements each time it is expanded */
           enable: me.disablePreEmptiveAuthCheckboxIfNotHttps
         },
+        'nx-coreui-repository-feature combo[name=attributes.maven.versionPolicy]' : {
+          change: me.handleMaven2VersionPolicyChange
+        },
         'nx-coreui-repository-nugetproxy-facet radiogroup[name=nugetVersion]': {
           change: me.onNugetProxyVersionChange
         },
@@ -700,7 +703,9 @@ Ext.define('NX.coreui.controller.Repositories', {
             var repoUrl = model.get('url');
 
             if (format === 'nuget') {
-              var nugetVersion = model.get('attributes')['nugetProxy']['nugetVersion'];
+              var nugetProxy = model.get('attributes')['nugetProxy'] || {};
+              var nugetVersion = nugetProxy['nugetVersion'];
+
               if (nugetVersion === 'V3' && !Ext.String.endsWith(repoUrl, 'index.json')) {
                 repoUrl += 'index.json';
                 model.set('url', repoUrl);

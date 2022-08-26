@@ -15,6 +15,12 @@ import {useMachine} from '@xstate/react';
 
 import {
   FieldWrapper,
+  Section, SectionToolbar,
+  Select,
+  Utils
+} from '@sonatype/nexus-ui-plugin';
+
+import {
   NxButton,
   NxFilterInput,
   NxLoadWrapper,
@@ -23,10 +29,7 @@ import {
   NxTableCell,
   NxTableHead,
   NxTableRow,
-  Section, SectionToolbar,
-  Select,
-  Utils
-} from '@sonatype/nexus-ui-plugin';
+} from '@sonatype/react-shared-components';
 import UIStrings from "../../../../constants/UIStrings";
 
 import ContentSelectorsPreviewMachine from './ContentSelectorsPreviewMachine';
@@ -51,12 +54,14 @@ export default function ContentSelectorsPreview({type, expression}) {
     <NxLoadWrapper isLoading={isLoading} retryHandler={retry}>
       <FieldWrapper labelText={UIStrings.CONTENT_SELECTORS.PREVIEW.REPOSITORY_LABEL}
                     descriptionText={UIStrings.CONTENT_SELECTORS.PREVIEW.REPOSITORY_DESCRIPTION}>
-        <Select name="repository" onChange={repositoryChangeHandler} value={repositories}>
-          {allRepositories.map(({id, name}) =>
-              <option key={id} value={id}>{name}</option>
-          )}
-        </Select>
-        <NxButton disabled={previewUnavailable} onClick={previewHandler}>{UIStrings.CONTENT_SELECTORS.PREVIEW.BUTTON}</NxButton>
+        <div className="nx-form-row">
+          <Select name="repository" onChange={repositoryChangeHandler} value={repositories}>
+            {allRepositories.map(({id, name}) =>
+                <option key={id} value={id}>{name}</option>
+            )}
+          </Select>
+          <NxButton disabled={previewUnavailable} onClick={previewHandler}>{UIStrings.CONTENT_SELECTORS.PREVIEW.BUTTON}</NxButton>
+        </div>
       </FieldWrapper>
       <SectionToolbar>
         <div className="nxrm-spacer" />

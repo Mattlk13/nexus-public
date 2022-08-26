@@ -14,6 +14,7 @@ package org.sonatype.nexus.internal.capability;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Random;
@@ -63,10 +64,11 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.anyString;
+import static org.junit.Assert.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
@@ -102,6 +104,9 @@ public class DefaultCapabilityRegistryTest
   @Mock
   private CapabilityDescriptorRegistry capabilityDescriptorRegistry;
 
+  @Mock
+  private CapabilityDescriptor capabilityDescriptor;
+
   private DefaultCapabilityRegistry underTest;
 
   private ArgumentCaptor<CapabilityEvent> rec;
@@ -130,7 +135,7 @@ public class DefaultCapabilityRegistryTest
     final CapabilityFactoryRegistry capabilityFactoryRegistry = mock(CapabilityFactoryRegistry.class);
     when(capabilityFactoryRegistry.get(CAPABILITY_TYPE)).thenReturn(factory);
 
-    when(capabilityDescriptorRegistry.get(CAPABILITY_TYPE)).thenReturn(mock(CapabilityDescriptor.class));
+    when(capabilityDescriptorRegistry.get(CAPABILITY_TYPE)).thenReturn(capabilityDescriptor);
 
     final ActivationConditionHandlerFactory achf = mock(ActivationConditionHandlerFactory.class);
     when(achf.create(Mockito.<DefaultCapabilityReference>any())).thenReturn(
@@ -563,5 +568,45 @@ public class DefaultCapabilityRegistryTest
     assertThat(itr.next().hasFailure(), is(false));
     assertThat(itr.next().hasFailure(), is(false));
     assertThat(itr.hasNext(), is(false));
+  }
+
+  @Test
+  public void refreshReferencesOnDemand() {
+    when(passwordHelper.decrypt("admin123")).thenReturn("*****");
+    when(passwordHelper.tryDecrypt("*****")).thenReturn("admin123");
+
+    CapabilityDescriptor descriptor = mock(CapabilityDescriptor.class);
+    when(capabilityDescriptorRegistry.get(CAPABILITY_TYPE)).thenReturn(descriptor);
+    when(descriptor.formFields()).thenReturn(Collections.singletonList(
+        new PasswordFormField("password", "password", "Sensitive field", FormField.MANDATORY)
+    ));
+
+    final Map<String, String> oldProps = Maps.newHashMap();
+    oldProps.put("p1", "v1");
+    oldProps.put("p2", "v2");
+    oldProps.put("password", passwordHelper.decrypt("admin123"));
+
+    final CapabilityStorageItem item = new OrientCapabilityStorageItem(
+        0, CAPABILITY_TYPE.toString(), true, null, oldProps
+    );
+    CapabilityIdentity fooId = capabilityIdentity("foo");
+    when(capabilityStorage.getAll()).thenReturn(ImmutableMap.of(fooId, item));
+
+    underTest.load();
+    Collection<DefaultCapabilityReference> references = underTest.getAll();
+    assertThat(references, hasSize(1));
+    Map<String, String> properties = references.stream().findFirst().get().properties();
+    assertEquals("v1", properties.get("p1"));
+    assertEquals("v2", properties.get("p2"));
+
+    oldProps.put("p1", "v1a");
+    oldProps.put("p2", "v2a");
+    underTest.pullAndRefreshReferencesFromDB();
+
+    assertThat(underTest.getAll(), hasSize(1));
+    properties = references.stream().findFirst().get().properties();
+    assertEquals("v1a", properties.get("p1"));
+    assertEquals("v2a", properties.get("p2"));
+    assertEquals("admin123", properties.get("password"));
   }
 }

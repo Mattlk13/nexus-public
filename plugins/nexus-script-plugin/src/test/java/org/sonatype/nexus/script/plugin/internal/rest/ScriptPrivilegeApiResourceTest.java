@@ -41,7 +41,7 @@ import org.mockito.Mock;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -127,7 +127,7 @@ public class ScriptPrivilegeApiResourceTest
   public void testUpdatePrivilege_script() {
     Privilege priv = createPrivilege("script", "priv", "privdesc", false, SCRIPT_KEY, "scriptName", ACTIONS_KEY,
         "read,run");
-    when(authorizationManager.getPrivilege("priv")).thenReturn(priv);
+    when(authorizationManager.getPrivilegeByName("priv")).thenReturn(priv);
 
     ApiPrivilegeScriptRequest apiPrivilege = new ApiPrivilegeScriptRequest("priv", "newdescription", "newScriptName",
         Collections.singletonList(PrivilegeAction.RUN));
@@ -135,7 +135,7 @@ public class ScriptPrivilegeApiResourceTest
     underTest.updatePrivilege("priv", apiPrivilege);
 
     ArgumentCaptor<Privilege> argument = ArgumentCaptor.forClass(Privilege.class);
-    verify(authorizationManager).updatePrivilege(argument.capture());
+    verify(authorizationManager).updatePrivilegeByName(argument.capture());
     assertPrivilege(argument.getValue(), "priv", "newdescription", SCRIPT_KEY, "newScriptName", ACTIONS_KEY,
         "run");
   }

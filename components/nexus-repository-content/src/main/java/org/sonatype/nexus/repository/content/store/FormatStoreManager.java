@@ -14,7 +14,6 @@ package org.sonatype.nexus.repository.content.store;
 
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
-
 import javax.inject.Inject;
 
 import org.sonatype.nexus.datastore.api.ContentDataAccess;

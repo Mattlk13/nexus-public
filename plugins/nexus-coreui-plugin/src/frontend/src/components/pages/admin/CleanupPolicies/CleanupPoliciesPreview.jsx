@@ -10,11 +10,17 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-import React from 'react';
+import React, {useEffect} from 'react';
 import {useMachine} from '@xstate/react';
 
 import {
-  FieldWrapper,
+  ListMachineUtils,
+  Section, SectionToolbar,
+  Select,
+  ValidationUtils
+} from '@sonatype/nexus-ui-plugin';
+
+import {
   NxButton,
   NxFilterInput,
   NxLoadWrapper,
@@ -23,78 +29,113 @@ import {
   NxTableCell,
   NxTableHead,
   NxTableRow,
-  Section, SectionToolbar,
-  Select,
-  Utils
-} from '@sonatype/nexus-ui-plugin';
-import UIStrings from "../../../../constants/UIStrings";
+  NxTooltip,
+  NxWarningAlert
+} from '@sonatype/react-shared-components';
+import UIStrings from '../../../../constants/UIStrings';
 
-import CleanupPoliciesPreviewMachine from './CleanupPoliciesPreviewMachine';
+import CleanupPoliciesPreviewFormMachine from './CleanupPoliciesPreviewFormMachine';
+import CleanupPoliciesPreviewListMachine from './CleanupPoliciesPreviewListMachine';
 
 export default function CleanupPoliciesPreview({policyData}) {
-  const [current, send] = useMachine(CleanupPoliciesPreviewMachine, {
-    devTools: true
-  });
+  const [formState, sendToForm] = useMachine(CleanupPoliciesPreviewFormMachine, {devTools: true});
+  const [listState, sendToList] = useMachine(CleanupPoliciesPreviewListMachine, {devTools: true});
 
-  const {repositories, data, filter : filterText, formError, previewError, repository} = current.context;
-  const previewUnavailable = Utils.isBlank(repository) || (Utils.isBlank(policyData.criteriaLastBlobUpdated) &&
-      Utils.isBlank(policyData.criteriaLastDownloaded) && Utils.isBlank(policyData.criteriaReleaseType) &&
-      Utils.isBlank(policyData.criteriaAssetRegex));
-  const isLoadingForm = current.matches('form.loading');
-  const isLoadingPreview = current.matches('preview.loading');
+  useEffect(() => {
+    sendToForm({type: 'LOAD_REPOSITORIES', format: policyData.format});
+    sendToList({type: 'CLEAR_PREVIEW'});
+  }, [policyData]);
+
+  const {error: repositoryLoadError, repository, repositories} = formState.context;
+  const {error: previewError, data, total, filter, isAlertShown} = listState.context;
+  const previewUnavailable = ValidationUtils.isBlank(repository) || (
+      ValidationUtils.isBlank(policyData.criteriaLastBlobUpdated) &&
+      ValidationUtils.isBlank(policyData.criteriaLastDownloaded) &&
+      ValidationUtils.isBlank(policyData.criteriaReleaseType) &&
+      ValidationUtils.isBlank(policyData.criteriaAssetRegex)
+  );
+  const isLoadingRepositories = formState.matches('loading');
+  const isLoadingPreview = listState.matches('loading');
   const hasData = data?.length > 0;
 
-  const nameSortDir = Utils.getSortDirection('name', current.context);
-  const groupSortDir = Utils.getSortDirection('group', current.context);
-  const versionSortDir = Utils.getSortDirection('version', current.context);
+  const nameSortDir = ListMachineUtils.getSortDirection('name', listState.context);
+  const groupSortDir = ListMachineUtils.getSortDirection('group', listState.context);
+  const versionSortDir = ListMachineUtils.getSortDirection('version', listState.context);
+  const sortByName = () => sendToList({type: 'SORT_BY_NAME'});
+  const sortByGroup = () => sendToList({type: 'SORT_BY_GROUP'});
+  const sortByVersion = () => sendToList({type: 'SORT_BY_VERSION'});
 
-  const repositoryChangeHandler = (event) => send({type: 'SET_REPOSITORY', repository: event.target.value});
-  const previewHandler = () => send({type: 'PREVIEW', policyData});
-
-  function filter(value) {
-    send({type: 'FILTER', filter: value, policyData});
+  function repositoryChangeHandler(event) {
+    sendToForm({type: 'SET_REPOSITORY', repository: event.target.value});
   }
 
   function retryForm() {
-    send({type: 'RETRY_FORM'});
+    sendToForm({type: 'LOAD_REPOSITORIES', format: policyData.format});
+  }
+
+  function previewHandler() {
+    sendToList({type: 'PREVIEW', repository, policyData});
   }
 
   function retryPreview() {
-    send({type: 'RETRY_PREVIEW'});
+    sendToList({type: 'RETRY_PREVIEW'});
+  }
+
+  function filterPreview(filter) {
+    sendToList({type: 'FILTER', filter});
   }
 
   return <Section className="nxrm-cleanup-policies-preview">
-    <h2>{UIStrings.CLEANUP_POLICIES.TITLE}</h2>
-    <NxLoadWrapper loading={isLoadingForm} error={formError} retryHandler={retryForm}>
+    <NxLoadWrapper loading={isLoadingRepositories} error={repositoryLoadError} retryHandler={retryForm}>
       {() => <>
-        <FieldWrapper labelText={UIStrings.CLEANUP_POLICIES.PREVIEW.REPOSITORY_LABEL}
-                      descriptionText={UIStrings.CLEANUP_POLICIES.PREVIEW.REPOSITORY_DESCRIPTION}>
-          <Select name="repository" onChange={repositoryChangeHandler}>
-            <option value="">{UIStrings.CLEANUP_POLICIES.REPOSITORY_SELECT}</option>
-            {repositories.map(({id, name}) =>
-                <option key={id} value={id}>{name}</option>
-            )}
-          </Select>
-          <NxButton disabled={previewUnavailable} onClick={previewHandler}>{UIStrings.CLEANUP_POLICIES.PREVIEW.BUTTON}</NxButton>
-        </FieldWrapper>
+        <div className="nx-form-group cleanup-preview-repository-group">
+          <label id="preview-repository-label" className="nx-label" htmlFor="repository">
+            <span className="nx-label__text">{UIStrings.CLEANUP_POLICIES.PREVIEW.REPOSITORY_LABEL}</span>
+          </label>
+          <div id="preview-repository-sub-label" className="nx-sub-label">
+            {UIStrings.CLEANUP_POLICIES.PREVIEW.REPOSITORY_DESCRIPTION}
+          </div>
+          <div className="nx-form-row">
+            <Select name="repository"
+                    onChange={repositoryChangeHandler}
+                    value={repository}
+                    aria-describedby="preview-repository-sub-label"
+                    disabled={!policyData.format}>
+              <option value="">{UIStrings.CLEANUP_POLICIES.REPOSITORY_SELECT}</option>
+              {repositories.map(({id, name}) =>
+                  <option key={id} value={id}>{name}</option>
+              )}
+            </Select>
+            <NxTooltip title={previewUnavailable ? UIStrings.CLEANUP_POLICIES.PREVIEW.BUTTON_TOOLTIP : undefined}>
+              <NxButton className={previewUnavailable ? 'disabled' : ''} onClick={previewHandler}>
+                {UIStrings.CLEANUP_POLICIES.PREVIEW.BUTTON}
+              </NxButton>
+            </NxTooltip>
+          </div>
+        </div>
+        {isAlertShown &&
+            <NxWarningAlert onClose={() => sendToForm({type: 'HIDE_ALERT'})}>
+              <p className="nx-p">{UIStrings.CLEANUP_POLICIES.PREVIEW.SAMPLE_WARNING}</p>
+              <p className="nx-p">{UIStrings.CLEANUP_POLICIES.PREVIEW.COMPONENT_COUNT(data.length, total)}</p>
+            </NxWarningAlert>}
         <SectionToolbar>
-          <div className="nxrm-spacer" />
+          <div className="nxrm-spacer"/>
           <NxFilterInput
-            id="filter"
-              onChange={filter}
-              value={filterText}
+              id="filter"
+              onChange={filterPreview}
+              value={filter}
               placeholder={UIStrings.CLEANUP_POLICIES.FILTER_PLACEHOLDER}/>
         </SectionToolbar>
         <NxTable>
           <NxTableHead>
             <NxTableRow>
-              <NxTableCell onClick={() => send({type: 'SORT_BY_NAME'})} isSortable sortDir={nameSortDir}>
+              <NxTableCell onClick={sortByName} isSortable sortDir={nameSortDir}>
                 {UIStrings.CLEANUP_POLICIES.PREVIEW.NAME_COLUMN}
               </NxTableCell>
-              <NxTableCell onClick={() => send({type: 'SORT_BY_GROUP'})} isSortable sortDir={groupSortDir}>
+              <NxTableCell onClick={sortByGroup} isSortable sortDir={groupSortDir}>
                 {UIStrings.CLEANUP_POLICIES.PREVIEW.GROUP_COLUMN}
               </NxTableCell>
-              <NxTableCell onClick={() => send({type: 'SORT_BY_VERSION'})} isSortable sortDir={versionSortDir}>
+              <NxTableCell onClick={sortByVersion} isSortable sortDir={versionSortDir}>
                 {UIStrings.CLEANUP_POLICIES.PREVIEW.VERSION_COLUMN}
               </NxTableCell>
             </NxTableRow>

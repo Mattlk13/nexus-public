@@ -15,6 +15,8 @@ package org.sonatype.nexus.cleanup.internal.search.elasticsearch;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.cleanup.storage.CleanupPolicy;
@@ -22,7 +24,7 @@ import org.sonatype.nexus.common.entity.DetachedEntityId;
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.query.QueryOptions;
-import org.sonatype.nexus.repository.search.query.SearchQueryService;
+import org.sonatype.nexus.repository.search.query.ElasticSearchQueryService;
 
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
@@ -38,8 +40,6 @@ import org.elasticsearch.search.sort.SortOrder;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Strings.isNullOrEmpty;
-import static com.google.common.collect.Iterables.transform;
-import static java.util.Collections.emptyList;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static org.elasticsearch.index.query.QueryBuilders.boolQuery;
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
@@ -57,7 +57,7 @@ public abstract class AbstractSearchCleanupComponentBrowse
 
   private static final String GROUP = "group";
 
-  private final SearchQueryService searchQueryService;
+  private final ElasticSearchQueryService elasticSearchQueryService;
 
   private final MetricRegistry metricRegistry;
 
@@ -67,25 +67,25 @@ public abstract class AbstractSearchCleanupComponentBrowse
 
   protected AbstractSearchCleanupComponentBrowse(
       final Map<String, CriteriaAppender> criteriaAppenders,
-      final SearchQueryService searchQueryService,
+      final ElasticSearchQueryService elasticSearchQueryService,
       final MetricRegistry metricRegistry)
   {
     this.criteriaAppenders = checkNotNull(criteriaAppenders);
-    this.searchQueryService = checkNotNull(searchQueryService);
+    this.elasticSearchQueryService = checkNotNull(elasticSearchQueryService);
     this.metricRegistry = checkNotNull(metricRegistry);
   }
 
-  public Iterable<EntityId> browse(final CleanupPolicy policy, final Repository repository) {
+  public Stream<EntityId> browse(final CleanupPolicy policy, final Repository repository) {
     if (policy.getCriteria().isEmpty()) {
-      return emptyList();
+      return Stream.empty();
     }
 
     QueryBuilder query = convertPolicyToQuery(policy);
 
     log.debug("Searching for components to cleanup using policy {}", policy);
 
-    return transform(invokeSearch(policy, repository, query),
-        searchHit -> new DetachedEntityId(searchHit.getId()));
+    return StreamSupport.stream(invokeSearch(policy, repository, query).spliterator(), false)
+        .map(searchHit -> new DetachedEntityId(searchHit.getId()));
   }
 
   private Iterable<SearchHit> invokeSearch(final CleanupPolicy policy,
@@ -95,7 +95,7 @@ public abstract class AbstractSearchCleanupComponentBrowse
     long start = System.nanoTime();
 
     try {
-      return searchQueryService.browse(unrestricted(query).inRepositories(repository));
+      return elasticSearchQueryService.browse(unrestricted(query).inRepositories(repository));
     }
     finally {
       updateTimer(policy, repository, System.nanoTime() - start);
@@ -110,7 +110,7 @@ public abstract class AbstractSearchCleanupComponentBrowse
     long start = System.nanoTime();
 
     try {
-      return searchQueryService.search(
+      return elasticSearchQueryService.search(
           unrestricted(query)
               .sortBy(getSort(options.getSortProperty(), options.getSortDirection()))
               .inRepositories(repository),

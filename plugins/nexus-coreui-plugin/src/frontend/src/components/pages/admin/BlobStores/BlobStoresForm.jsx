@@ -18,12 +18,6 @@ import {faTrash} from "@fortawesome/free-solid-svg-icons";
 import {
   DynamicFormField,
   FieldWrapper,
-  NxButton,
-  NxCheckbox,
-  NxErrorAlert,
-  NxFontAwesomeIcon,
-  NxTooltip,
-  NxInfoAlert,
   Page,
   PageActions,
   PageHeader,
@@ -32,9 +26,21 @@ import {
   SectionFooter,
   Select,
   Textfield,
-  NxForm,
-  FormUtils
+  FormUtils,
 } from '@sonatype/nexus-ui-plugin';
+import {
+  NxButton,
+  NxCheckbox,
+  NxErrorAlert,
+  NxFontAwesomeIcon,
+  NxTooltip,
+  NxInfoAlert,
+  NxForm,
+  NxModal,
+  NxTextInput,
+  NxFormGroup,
+  NxLoadWrapper
+} from '@sonatype/react-shared-components';
 import BlobStoresFormMachine from './BlobStoresFormMachine';
 import UIStrings from '../../../../constants/UIStrings';
 import CustomBlobStoreSettings from './CustomBlobStoreSettings';
@@ -45,8 +51,8 @@ const FORM = UIStrings.BLOB_STORES.FORM;
 export default function BlobStoresForm({itemId, onDone}) {
   const idParts = itemId.split('/');
   const pristineData = idParts?.length ? {
-    type: idParts[0],
-    name: idParts[1]
+    type: idParts[0] && decodeURIComponent(idParts[0]),
+    name: idParts[1] && decodeURIComponent(idParts[1])
   } : {};
 
   const [current, send, service] = useMachine(BlobStoresFormMachine, {
@@ -64,6 +70,8 @@ export default function BlobStoresForm({itemId, onDone}) {
 
   const isLoading = current.matches('loading');
   const isSaving = current.matches('saving');
+  const showConvertToGroupModal = current.matches('modalConvertToGroup');
+  const isConvertingToGroup = current.matches('convertToGroup');
   const isCreate = itemId === '';
   const isEdit = !isCreate;
   const {
@@ -125,8 +133,23 @@ export default function BlobStoresForm({itemId, onDone}) {
     send({type: 'CONFIRM_DELETE'});
   }
 
-  function promoteToGroup() {
-    send({type: 'PROMOTE_TO_GROUP'});
+  function modalConvertToGroupOpen() {
+    send({type: 'MODAL_CONVERT_TO_GROUP_OPEN'});
+  }
+
+  function modalConvertToGroupClose() {
+    send({type: 'MODAL_CONVERT_TO_GROUP_CLOSE'});
+  }
+
+  function modalConvertToGroupSave() {
+    send({type: 'MODAL_CONVERT_TO_GROUP_SAVE'});
+  }
+
+  function handleModalConvertToGroupValue(value) {
+    send({
+      type: 'MODAL_CONVERT_TO_GROUP_SET_NEW_BLOB_NAME',
+      value
+    });
   }
 
   return <Page className="nxrm-blob-stores">
@@ -136,7 +159,7 @@ export default function BlobStoresForm({itemId, onDone}) {
                  description={isEdit ? FORM.EDIT_DESCRIPTION(type?.name || pristineData.type) : null}/>
       {isEdit && type?.id !== 'group' && types.some(type => type.id === 'group') &&
       <PageActions>
-        <NxButton variant="primary" onClick={promoteToGroup}>{FORM.PROMOTE_BUTTON}</NxButton>
+        <NxButton variant="primary" onClick={modalConvertToGroupOpen}>{FORM.CONVERT_TO_GROUP_BUTTON}</NxButton>
       </PageActions>
       }
     </PageHeader>
@@ -216,5 +239,40 @@ export default function BlobStoresForm({itemId, onDone}) {
         }
       </NxForm>
     </Section>
+    {(showConvertToGroupModal || isConvertingToGroup) &&
+    <NxModal onCancel={modalConvertToGroupClose}>
+      <header className="nx-modal-header">
+        <h2 className="nx-h2">Convert to Group Blob Store</h2>
+      </header>
+      <div className="nx-modal-content">
+        <p className="nx-p">
+          <strong>
+            Rename Original Blob Store
+          </strong>
+        </p>
+        <NxFormGroup
+            sublabel="Assign a new name to the original blob store"
+            isRequired
+        >
+          <NxTextInput
+              disabled={isConvertingToGroup}
+              value={data.modalConvertToGroupNewBlobName}
+              onChange={handleModalConvertToGroupValue}
+          />
+        </NxFormGroup>
+      </div>
+      <footer className="nx-footer">
+        <NxErrorAlert>
+          You are converting to a group blob store. This action cannot be undone.
+        </NxErrorAlert>
+        <div className="nx-btn-bar">
+          <NxLoadWrapper loading={isConvertingToGroup}>
+            <NxButton onClick={modalConvertToGroupClose}>Close</NxButton>
+            <NxButton onClick={modalConvertToGroupSave} variant="primary">Convert</NxButton>
+          </NxLoadWrapper>
+        </div>
+      </footer>
+    </NxModal>
+    }
   </Page>;
 }

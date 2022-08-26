@@ -18,15 +18,8 @@
 .x-body {
   line-height: var(--nx-line-height);
 
-  .nx-tile-footer {
-    text-align: left !important;
-  }
-
-  .nx-footer .nx-btn-bar {
-    flex-direction: row-reverse;
-    > :last-child {
-      margin-right: var(--nx-spacing-6x);
-    }
+  .nx-btn {
+    white-space: nowrap;
   }
 }
 
@@ -38,6 +31,6 @@
   }
 
   > .nx-accordion__summary-wrapper {
-    padding-left: 0px;
+    padding-left: 0;
   }
 }

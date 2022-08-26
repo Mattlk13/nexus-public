@@ -17,7 +17,7 @@
 import {assign} from 'xstate';
 import Axios from 'axios';
 
-import {ExtJS, Utils} from '@sonatype/nexus-ui-plugin';
+import {ExtJS, Utils, ValidationUtils} from '@sonatype/nexus-ui-plugin';
 
 import UIStrings from '../../../../constants/UIStrings';
 
@@ -26,15 +26,6 @@ const url = (name) => `${baseUrl}/${name}`;
 
 function isEdit({name}) {
   return Utils.notBlank(name);
-}
-
-function validateName(name) {
-  if (Utils.isBlank(name)) {
-    return UIStrings.ERROR.FIELD_REQUIRED;
-  }
-  else if (!Utils.isName(name)) {
-    return UIStrings.ERROR.INVALID_NAME_CHARS;
-  }
 }
 
 export default Utils.buildFormMachine({
@@ -78,7 +69,7 @@ export default Utils.buildFormMachine({
   actions: {
     validate: assign({
       validationErrors: ({data}) => ({
-        name: validateName(data.name),
+        name: ValidationUtils.validateNameField(data.name),
         expression: Utils.isBlank(data.expression) ? UIStrings.ERROR.FIELD_REQUIRED : null
       })
     }),
@@ -111,6 +102,9 @@ export default Utils.buildFormMachine({
             }
             else if (e.id === 'HelperBean.expression') {
               errors.expression = e.message;
+            }
+            else if (e.id === 'name') {
+              errors.name = e.message;
             }
             else {
               console.error('Unhandled backend error', e);

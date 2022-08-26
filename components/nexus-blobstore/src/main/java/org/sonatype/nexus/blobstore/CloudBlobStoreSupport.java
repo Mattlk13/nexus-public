@@ -14,6 +14,7 @@ package org.sonatype.nexus.blobstore;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
@@ -23,7 +24,7 @@ import org.sonatype.nexus.common.log.DryRunPrefix;
  * Support class for Cloud blob stores.
  *
  * @see CloudBlobPropertiesSupport
- * @since 3.35
+ * @since 3.37
  */
 public abstract class CloudBlobStoreSupport<T extends AttributesLocation>
     extends BlobStoreSupport<T>
@@ -48,7 +49,13 @@ public abstract class CloudBlobStoreSupport<T extends AttributesLocation>
       throw new IllegalArgumentException(
           String.format("Permanent blob headers must not contain entry with '%s' key.", TEMPORARY_BLOB_HEADER));
     }
-    return writeBlobProperties(blobId, headers);
+
+    return Optional.ofNullable(get(blobId))
+        .map(Blob::getHeaders)
+        .filter(blobHeaders -> blobHeaders.containsKey(TEMPORARY_BLOB_HEADER))
+        .map(__ -> writeBlobProperties(blobId, headers))
+        // We were given a blob that was already made permanent, so we need to copy it instead.
+        .orElseGet(() -> super.makeBlobPermanent(blobId, headers));
   }
 
   private Map<String, String> removeTemporaryBlobHeaderIfPresent(final Map<String, String> headers) {
